@@ -1,73 +1,65 @@
 # DSH Plugin Manager
 
-DSH 原生插件管家。它是当前 DSH Profile 的第三方插件生命周期控制面：查看真实安装状态，通过标准 dsh plugin 命令安装、升级和卸载，并对每个插件执行基础兼容性检查。
+DSH 原生插件管家。它管理当前 DSH Profile 的第三方插件生命周期，检查插件结构健康，并识别 npm Registry 上可用的新版本。
 
 ## 产品定位
 
-- **插件管家**是产品定位：管理插件清单和生命周期。
+- **插件管家**是产品定位：管理插件清单、来源和生命周期。
 - **插件体检**是辅助能力：检查已安装包、Manifest、Bundle 注册、Bundle patch 和 Client 导出。
-- **运行环境自检**用于排查 DSH Home、Profile、Node.js 和 Web Runtime，本身不是产品主功能。
-- 0.2.0 **不提供漏洞扫描**，不会把依赖健康检查冒充为 CVE 或供应链安全扫描。
+- **版本识别**只查询 npm Registry 的 latest 版本；本地包和 Git 源会明确显示无法自动判断。
+- **可信来源目录**只展示内置核验或由 Profile 管理员显式配置的来源，不把搜索结果冒充推荐。
+- 0.3.0 **不提供漏洞扫描**，不把结构检查冒充为 CVE 或供应链安全扫描。
 
 ## 使用方式
 
-安装后启动 DSH Web：
-
-~~~powershell
-dsh web
-~~~
-
-进入 DSH **设置 → 插件 → 插件管家**。
+安装后运行 `dsh web`，进入 **设置 → 插件 → 插件管家**。
 
 插件管家支持：
 
-- 输入 npm 包名或版本，例如 demo-plugin、@scope/plugin@1.2.3
-- 输入 GitHub 仓库地址，例如 https://github.com/owner/repo
-- 输入无空格的本地 .tgz 绝对路径
+- 使用 npm 包、GitHub 仓库地址或本地 .tgz 安装插件
 - 升级或卸载当前 Profile 中的第三方插件
-- 查看实际执行的标准 DSH 命令、退出码和运行日志
-- 查看每个插件的基础健康状态和明确问题
+- 显示 Registry 最新版本和可升级状态
+- 查看可信来源、信任依据和代码仓库
+- 查看每个插件的结构健康问题
+- 查看实际执行的标准 DSH 命令、退出码和输出
 
 所有变更写入 Profile 后都需要重启 DSH Web 才能加载新的插件代码。
 
 ## 标准 CLI 安装
 
-要求 Node.js 22.19 或更高版本。生成安装包：
+要求 Node.js 22.19 或更高版本。
 
 ~~~powershell
 npm ci
 npm test
-npm run build
 npm run pack:release
+dsh plugin --profile web add .\dsh-plugin-manager-0.3.0.tgz
+dsh web
 ~~~
 
-安装到默认 Web Profile：
+## 配置可信来源
 
-~~~powershell
-dsh plugin --profile web add .\dsh-plugin-manager-0.2.0.tgz
+插件配置可追加由 Profile 管理员负责的来源：
+
+~~~yaml
+catalog:
+  - name: example-plugin
+    description: 团队核验的示例插件
+    installSpec: example-plugin
+    repository: https://github.com/example/example-plugin
 ~~~
 
-升级已发布的 npm 包：
+目录不是远程搜索结果；每个条目必须由插件内置或 Profile 管理员显式登记。安装仍经过与手动输入相同的目标校验和标准 `dsh plugin` 命令。
 
-~~~powershell
-dsh plugin --profile web update dsh-plugin-manager
-~~~
+## 安全与网络边界
 
-卸载：
-
-~~~powershell
-dsh plugin --profile web remove dsh-plugin-manager
-~~~
-
-## 安全边界
-
-- 操作 API 只接受 add、update、remove 三种动作。
+- 操作 API 只接受 add、update、remove。
 - 安装目标只接受受限格式的 npm 包、GitHub 仓库或本地 .tgz。
 - 不提供任意 Shell、命令拼接或配置文件编辑入口。
-- 插件管家不能从自己的运行页面升级或卸载自身。
 - 修改操作严格串行，并要求同源自定义请求头。
-- 本地路径暂不接受空格或 Shell 特殊字符。
-- 操作完成后只提示重启，不从插件进程内部强制终止 DSH。
+- 插件管家不能从运行页面升级或卸载自身。
+- 版本检查只向 `https://registry.npmjs.org/<package>/latest` 发起 GET 请求，4 秒超时，成功结果缓存 10 分钟。
+- Registry 失败只影响版本提示，不影响本地清单和结构体检。
 
 ## 基础健康检查
 

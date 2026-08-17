@@ -2,12 +2,16 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { PluginOperationError, type PluginOperationService } from './operations.js'
 import type {
   DiagnosticReport,
+  PluginCatalog,
   PluginInventory,
+  PluginUpdatesReport,
   PluginOperationRequest,
 } from './shared.js'
 
 export type DiagnosticReportProvider = () => Promise<DiagnosticReport>
 export type PluginInventoryProvider = () => Promise<PluginInventory>
+export type PluginUpdatesProvider = () => Promise<PluginUpdatesReport>
+export type PluginCatalogProvider = () => Promise<PluginCatalog>
 
 const JSON_HEADERS = {
   'cache-control': 'no-store',
@@ -68,6 +72,37 @@ export function createInventoryHandler(
   }
 }
 
+export function createUpdatesHandler(
+  getUpdates: PluginUpdatesProvider,
+): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+  return async (req, res) => {
+    if (req.method !== 'GET') {
+      sendJson(res, 405, { error: 'method_not_allowed' }, { allow: 'GET' })
+      return
+    }
+    try {
+      sendJson(res, 200, await getUpdates())
+    } catch {
+      sendJson(res, 500, { error: 'updates_failed' })
+    }
+  }
+}
+
+export function createCatalogHandler(
+  getCatalog: PluginCatalogProvider,
+): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+  return async (req, res) => {
+    if (req.method !== 'GET') {
+      sendJson(res, 405, { error: 'method_not_allowed' }, { allow: 'GET' })
+      return
+    }
+    try {
+      sendJson(res, 200, await getCatalog())
+    } catch {
+      sendJson(res, 500, { error: 'catalog_failed' })
+    }
+  }
+}
 export function createOperationsHandler(
   service: PluginOperationService,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {

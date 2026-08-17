@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- Add npm Registry latest-version checks with timeout, caching, and per-plugin failure isolation.
+- Show available updates beside installed plugin health without conflating the two.
+- Add a trusted-source catalog with builtin and Profile-managed trust labels.
+- Route catalog installs through the same guarded standard DSH CLI operation.
+- Document network, trust, and non-vulnerability-scanning boundaries.
 ## 0.2.0
 
 - Reposition the product as **插件管家**; plugin health is an auxiliary capability.

@@ -1,8 +1,10 @@
 export const PACKAGE_NAME = 'dsh-plugin-manager'
-export const MANAGER_VERSION = '0.2.0'
+export const MANAGER_VERSION = '0.3.0'
 export const DIAGNOSTICS_PATH = '/dsh-plugin-manager/api/diagnostics'
 export const INVENTORY_PATH = '/dsh-plugin-manager/api/plugins'
 export const OPERATIONS_PATH = '/dsh-plugin-manager/api/operations'
+export const UPDATES_PATH = '/dsh-plugin-manager/api/updates'
+export const CATALOG_PATH = '/dsh-plugin-manager/api/catalog'
 
 export type DiagnosticStatus = 'pass' | 'warning' | 'fail'
 
@@ -56,6 +58,36 @@ export interface PluginInventory {
   readonly plugins: readonly ManagedPlugin[]
 }
 
+export type PluginUpdateState = 'available' | 'current' | 'unavailable'
+
+export interface PluginUpdateInfo {
+  readonly name: string
+  readonly installedVersion: string | null
+  readonly latestVersion: string | null
+  readonly state: PluginUpdateState
+  readonly message: string
+}
+
+export interface PluginUpdatesReport {
+  readonly schemaVersion: 1
+  readonly generatedAt: string
+  readonly registry: 'https://registry.npmjs.org'
+  readonly updates: readonly PluginUpdateInfo[]
+}
+
+export interface PluginCatalogEntry {
+  readonly name: string
+  readonly description: string
+  readonly installSpec: string
+  readonly repository: string
+  readonly trust: 'builtin' | 'profile'
+}
+
+export interface PluginCatalog {
+  readonly schemaVersion: 1
+  readonly generatedAt: string
+  readonly entries: readonly PluginCatalogEntry[]
+}
 export type PluginAction = 'add' | 'update' | 'remove'
 
 export interface PluginOperationRequest {

@@ -33,6 +33,14 @@ export const CLIENT_STYLES = `
 .dpm-plugin-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .dpm-plugin-title strong { font-size: 14px; overflow-wrap: anywhere; }
 .dpm-kind, .dpm-version { opacity: .72; }
+.dpm-update-badge { border-radius: 999px; padding: 3px 8px; font-size: 11px; color: #2563eb; background: #dbeafe; }
+.dpm-update-copy { display: block; margin-top: 5px; font-size: 12px; opacity: .72; }
+.dpm-update-copy[data-state='available'] { color: #2563eb; opacity: 1; font-weight: 600; }
+.dpm-catalog-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.dpm-catalog-item { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px; border: 1px solid color-mix(in srgb, currentColor 14%, transparent); border-radius: 12px; }
+.dpm-catalog-item strong { margin-right: 8px; }
+.dpm-catalog-item p { margin: 6px 0; opacity: .72; }
+.dpm-catalog-item a { font-size: 12px; color: #2563eb; }
 .dpm-spec { display: block; opacity: .62; font-size: 11px; overflow-wrap: anywhere; white-space: normal; }
 .dpm-healthy-copy { margin: 0 0 0 20px; color: #188a57; font-size: 12px; }
 .dpm-issues { display: grid; gap: 5px; margin: 0 0 0 20px; padding: 0; list-style: none; font-size: 12px; }
