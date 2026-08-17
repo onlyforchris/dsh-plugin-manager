@@ -1,60 +1,82 @@
 # DSH Plugin Manager
 
-DSH 原生插件管家。第一版提供只读“插件医生”，检查当前 Web Profile、Bundle 注册、Loader 中的插件管家实例、Node.js 与 Web 运行状态。
+DSH 原生插件管家。它是当前 DSH Profile 的第三方插件生命周期控制面：查看真实安装状态，通过标准 dsh plugin 命令安装、升级和卸载，并对每个插件执行基础兼容性检查。
 
-## 产品边界
+## 产品定位
 
-- 通过 `dsh plugin` 安装、升级和卸载。
-- 安装后进入 DSH **设置 → 插件 → 插件医生**。
-- 不提供双击脚本、独立管理页面或额外常驻进程。
-- 第一版不执行 shell、不改写 Profile、不读取凭据，也不向诊断响应暴露本地绝对路径。
+- **插件管家**是产品定位：管理插件清单和生命周期。
+- **插件体检**是辅助能力：检查已安装包、Manifest、Bundle 注册、Bundle patch 和 Client 导出。
+- **运行环境自检**用于排查 DSH Home、Profile、Node.js 和 Web Runtime，本身不是产品主功能。
+- 0.2.0 **不提供漏洞扫描**，不会把依赖健康检查冒充为 CVE 或供应链安全扫描。
 
-## 构建与打包
+## 使用方式
 
-要求 Node.js 22.19 或更高版本。
+安装后启动 DSH Web：
 
-```powershell
+~~~powershell
+dsh web
+~~~
+
+进入 DSH **设置 → 插件 → 插件管家**。
+
+插件管家支持：
+
+- 输入 npm 包名或版本，例如 demo-plugin、@scope/plugin@1.2.3
+- 输入 GitHub 仓库地址，例如 https://github.com/owner/repo
+- 输入无空格的本地 .tgz 绝对路径
+- 升级或卸载当前 Profile 中的第三方插件
+- 查看实际执行的标准 DSH 命令、退出码和运行日志
+- 查看每个插件的基础健康状态和明确问题
+
+所有变更写入 Profile 后都需要重启 DSH Web 才能加载新的插件代码。
+
+## 标准 CLI 安装
+
+要求 Node.js 22.19 或更高版本。生成安装包：
+
+~~~powershell
 npm ci
 npm test
 npm run build
 npm run pack:release
-```
+~~~
 
-## 标准 CLI 安装
+安装到默认 Web Profile：
 
-在生成 `.tgz` 后执行：
-
-```powershell
-dsh plugin --profile web add .\dsh-plugin-manager-0.1.0.tgz
-dsh --profile web --dump-config
-dsh web
-```
+~~~powershell
+dsh plugin --profile web add .\dsh-plugin-manager-0.2.0.tgz
+~~~
 
 升级已发布的 npm 包：
 
-```powershell
+~~~powershell
 dsh plugin --profile web update dsh-plugin-manager
-```
+~~~
 
 卸载：
 
-```powershell
+~~~powershell
 dsh plugin --profile web remove dsh-plugin-manager
-```
+~~~
 
-如果机器没有全局 `dsh`，仍然使用同一套 DSH CLI，只通过 npm 临时提供可执行文件：
+## 安全边界
 
-```powershell
-npm exec --yes --package=@deepseek-ai/dsh -- dsh plugin --profile web add .\dsh-plugin-manager-0.1.0.tgz
-```
+- 操作 API 只接受 add、update、remove 三种动作。
+- 安装目标只接受受限格式的 npm 包、GitHub 仓库或本地 .tgz。
+- 不提供任意 Shell、命令拼接或配置文件编辑入口。
+- 插件管家不能从自己的运行页面升级或卸载自身。
+- 修改操作严格串行，并要求同源自定义请求头。
+- 本地路径暂不接受空格或 Shell 特殊字符。
+- 操作完成后只提示重启，不从插件进程内部强制终止 DSH。
 
-## 当前诊断项
+## 基础健康检查
 
-- Node.js 最低版本
-- DSH Home 可访问性
-- Web Profile 清单与 pnpm 锁文件
-- 插件依赖和 Bundle 层注册
-- 当前 Loader 中插件管家自身的实例数量
-- DSH Web 监听状态
+每个 Profile 依赖会检查：
 
-DSH 仍处于 developer preview。插件当前针对 `@deepseek-ai/dsh 0.1.0-rc.6` 的 Bundle、Client 模块和 Settings slot 约定构建。
+- 安装目录中是否存在有效 package.json
+- 是否声明 dsh.bundle.patch
+- Bundle 是否加入当前 Profile
+- Bundle patch 文件是否真实存在且位于插件包内
+- 声明 dsh.client 时是否存在可访问的 ./client 导出
+
+DSH 仍处于 developer preview。当前版本针对 @deepseek-ai/dsh 0.1.0-rc.6 的 Bundle、Client 和 Settings slot 约定构建。

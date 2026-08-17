@@ -1,38 +1,114 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { DiagnosticReport } from './shared.js'
+import { PluginOperationError, type PluginOperationService } from './operations.js'
+import type {
+  DiagnosticReport,
+  PluginInventory,
+  PluginOperationRequest,
+} from './shared.js'
 
 export type DiagnosticReportProvider = () => Promise<DiagnosticReport>
+export type PluginInventoryProvider = () => Promise<PluginInventory>
+
+const JSON_HEADERS = {
+  'cache-control': 'no-store',
+  'content-type': 'application/json; charset=utf-8',
+  'x-content-type-options': 'nosniff',
+}
+
+function sendJson(
+  res: ServerResponse,
+  status: number,
+  body: unknown,
+  extraHeaders: Record<string, string> = {},
+): void {
+  res.writeHead(status, { ...JSON_HEADERS, ...extraHeaders })
+  res.end(JSON.stringify(body))
+}
+
+async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  let body = ''
+  for await (const chunk of req) {
+    body += chunk.toString()
+    if (body.length > 8_192) throw new Error('request_too_large')
+  }
+  return JSON.parse(body)
+}
 
 export function createDiagnosticsHandler(
   getReport: DiagnosticReportProvider,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   return async (req, res) => {
     if (req.method !== 'GET') {
-      res.writeHead(405, {
-        allow: 'GET',
-        'cache-control': 'no-store',
-        'content-type': 'application/json; charset=utf-8',
-        'x-content-type-options': 'nosniff',
-      })
-      res.end(JSON.stringify({ error: 'method_not_allowed' }))
+      sendJson(res, 405, { error: 'method_not_allowed' }, { allow: 'GET' })
       return
     }
 
     try {
-      const report = await getReport()
-      res.writeHead(200, {
-        'cache-control': 'no-store',
-        'content-type': 'application/json; charset=utf-8',
-        'x-content-type-options': 'nosniff',
-      })
-      res.end(JSON.stringify(report))
+      sendJson(res, 200, await getReport())
     } catch {
-      res.writeHead(500, {
-        'cache-control': 'no-store',
-        'content-type': 'application/json; charset=utf-8',
-        'x-content-type-options': 'nosniff',
-      })
-      res.end(JSON.stringify({ error: 'diagnostics_failed' }))
+      sendJson(res, 500, { error: 'diagnostics_failed' })
+    }
+  }
+}
+
+export function createInventoryHandler(
+  getInventory: PluginInventoryProvider,
+): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+  return async (req, res) => {
+    if (req.method !== 'GET') {
+      sendJson(res, 405, { error: 'method_not_allowed' }, { allow: 'GET' })
+      return
+    }
+
+    try {
+      sendJson(res, 200, await getInventory())
+    } catch {
+      sendJson(res, 500, { error: 'inventory_failed' })
+    }
+  }
+}
+
+export function createOperationsHandler(
+  service: PluginOperationService,
+): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+  return async (req, res) => {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { error: 'method_not_allowed' }, { allow: 'POST' })
+      return
+    }
+    if (req.headers['x-dsh-plugin-manager'] !== '1') {
+      sendJson(res, 403, { error: 'request_guard_required' })
+      return
+    }
+
+    let parsed: unknown
+    try {
+      parsed = await readJsonBody(req)
+    } catch {
+      sendJson(res, 400, { error: 'invalid_request', message: '请求格式无效' })
+      return
+    }
+    if (parsed === null || typeof parsed !== 'object') {
+      sendJson(res, 400, { error: 'invalid_request', message: '请求格式无效' })
+      return
+    }
+    const request = parsed as PluginOperationRequest
+    if (typeof request.action !== 'string' || typeof request.target !== 'string') {
+      sendJson(res, 400, { error: 'invalid_request', message: '请求格式无效' })
+      return
+    }
+
+    try {
+      sendJson(res, 200, await service.run(request))
+    } catch (error) {
+      if (error instanceof PluginOperationError) {
+        sendJson(res, error.code === 'busy' ? 409 : 400, {
+          error: error.code,
+          message: error.message,
+        })
+        return
+      }
+      sendJson(res, 500, { error: 'operation_failed', message: 'DSH 插件命令执行失败' })
     }
   }
 }

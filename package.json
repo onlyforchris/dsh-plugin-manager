@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-manager",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Native DeepSeek Harness plugin diagnostics and lifecycle guardrails",
   "type": "module",
   "main": "./lib/index.js",
@@ -56,5 +56,16 @@
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "pnpm": "10.34.5"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/onlyforchris/dsh-plugin-manager.git"
+  },
+  "homepage": "https://github.com/onlyforchris/dsh-plugin-manager#readme",
+  "bugs": {
+    "url": "https://github.com/onlyforchris/dsh-plugin-manager/issues"
+  }
 }

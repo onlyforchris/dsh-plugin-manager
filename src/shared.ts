@@ -1,6 +1,8 @@
 export const PACKAGE_NAME = 'dsh-plugin-manager'
-export const MANAGER_VERSION = '0.1.0'
+export const MANAGER_VERSION = '0.2.0'
 export const DIAGNOSTICS_PATH = '/dsh-plugin-manager/api/diagnostics'
+export const INVENTORY_PATH = '/dsh-plugin-manager/api/plugins'
+export const OPERATIONS_PATH = '/dsh-plugin-manager/api/operations'
 
 export type DiagnosticStatus = 'pass' | 'warning' | 'fail'
 
@@ -24,4 +26,51 @@ export interface DiagnosticReport {
   readonly profileName: string
   readonly summary: DiagnosticSummary
   readonly checks: readonly DiagnosticCheck[]
+}
+
+export type PluginHealthStatus = 'healthy' | 'warning' | 'error'
+
+export interface PluginHealthIssue {
+  readonly code: string
+  readonly severity: 'warning' | 'error'
+  readonly message: string
+}
+
+export interface ManagedPlugin {
+  readonly name: string
+  readonly spec: string
+  readonly version: string | null
+  readonly bundle: boolean
+  readonly client: boolean
+  readonly manager: boolean
+  readonly health: PluginHealthStatus
+  readonly issues: readonly PluginHealthIssue[]
+  readonly canUpdate: boolean
+  readonly canRemove: boolean
+}
+
+export interface PluginInventory {
+  readonly schemaVersion: 1
+  readonly generatedAt: string
+  readonly profileName: string
+  readonly plugins: readonly ManagedPlugin[]
+}
+
+export type PluginAction = 'add' | 'update' | 'remove'
+
+export interface PluginOperationRequest {
+  readonly action: PluginAction
+  readonly target: string
+}
+
+export interface PluginOperationResult {
+  readonly schemaVersion: 1
+  readonly action: PluginAction
+  readonly target: string
+  readonly success: boolean
+  readonly exitCode: number
+  readonly command: string
+  readonly output: string
+  readonly restartRequired: boolean
+  readonly finishedAt: string
 }
