@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-manager",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Native DSH plugin discovery, first-use, and lifecycle manager",
   "type": "module",
   "main": "./lib/index.js",

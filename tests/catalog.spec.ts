@@ -36,7 +36,8 @@ describe("recommendation catalog", () => {
     const published = JSON.parse(
       await readFile(new URL("../registry/plugins.json", import.meta.url), "utf8"),
     );
-    expect(parseRegistryDocument(published).entries).toHaveLength(5);
+    // 目录有意保持为空：推荐条目只应在完成实机验证后由维护者发布
+    expect(parseRegistryDocument(published).entries).toHaveLength(0);
   });
   it("validates entries and rejects unsafe install sources", () => {
     expect(parseRegistryDocument(document).entries[0]?.id).toBe("demo-plugin");

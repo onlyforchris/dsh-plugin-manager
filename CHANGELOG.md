@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.3
+
+- Fix plugin operations failing with HTTP 500 on Windows: run pnpm through `node <pnpm.cjs>` instead of spawning the `pnpm` name or `.cmd` shim directly, which Node cannot resolve or execute without a shell.
+
 ## 0.6.2
 
 - Run plugin mutations by invoking the Profile's pinned `pnpm` directly with a hidden console instead of routing through `dsh plugin`'s `shell: true` wrapper — no more visible cmd windows per operation on Windows.

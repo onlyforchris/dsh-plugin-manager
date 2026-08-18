@@ -71,6 +71,24 @@ export function pnpmStoreHint(profileRoot: string): string {
   return `检测到 pnpm 版本与 Profile 不匹配：Profile 的依赖由 pnpm 10.x（store v10）安装，而本次命令使用的 pnpm 是 11.x（store v11），pnpm 拒绝继续。插件管家会优先使用 Profile 内置的 pnpm 10.34.5（${profilePnpmBin}）；若你在终端手动执行 dsh plugin 命令，请先执行：set PATH=${profilePnpmBin};%PATH%（PowerShell：$env:PATH="${profilePnpmBin};$env:PATH"），然后重试。`
 }
 
+/**
+ * 解析 pnpm 的 bin 脚本绝对路径（`<node_modules>/pnpm/bin/pnpm.cjs`）。
+ * Windows 上 `.cmd` shim 无法被 `spawn({shell:false})` 直接执行（EINVAL），
+ * 而 `spawn("pnpm")` 又不做扩展名解析（ENOENT）——最可靠的方式是用
+ * `node <pnpm.cjs>` 直接运行，且配合 `windowsHide` 完全无窗口。
+ */
+export function resolvePnpmBinScript(bins: readonly string[]): string | null {
+  for (const bin of bins) {
+    const candidate = join(bin, '..', 'pnpm', 'bin', 'pnpm.cjs')
+    if (existsSync(candidate)) return candidate
+  }
+  try {
+    return require.resolve('pnpm/bin/pnpm.cjs')
+  } catch {
+    return null
+  }
+}
+
 export function isInstallSpec(value: string): boolean {
   return NPM_SPEC_PATTERN.test(value)
     || GITHUB_URL_PATTERN.test(value)
@@ -191,13 +209,22 @@ function runPnpm(
   input: { readonly profileRoot: string; readonly timeoutMs?: number },
 ): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
+    const bins = resolvePnpmBins(input.profileRoot)
+    const pnpmBin = resolvePnpmBinScript(bins)
+    if (pnpmBin === null) {
+      reject(new PluginOperationError(
+        'Profile 中找不到 pnpm（node_modules/pnpm 缺失），请先在终端执行 dsh plugin --profile web install 修复依赖',
+        'invalid_request',
+      ))
+      return
+    }
     const env = { ...process.env }
     const pathKey = Object.keys(env).find(key => key.toLowerCase() === 'path') ?? 'PATH'
-    env[pathKey] = [...resolvePnpmBins(input.profileRoot), env[pathKey] ?? ''].join(delimiter)
+    env[pathKey] = [...bins, env[pathKey] ?? ''].join(delimiter)
 
     // 直接以隐藏控制台运行 Profile 内置 pnpm：不经过 `dsh plugin` 的
     // shell 包装，Windows 上每次操作不会再弹出可见的 cmd 窗口。
-    const child = spawn('pnpm', [...args], {
+    const child = spawn(process.execPath, [pnpmBin, ...args], {
       cwd: input.profileRoot,
       env,
       shell: false,

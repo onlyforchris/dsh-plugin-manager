@@ -9,6 +9,7 @@ import {
   PluginOperationService,
   pnpmStoreHint,
   reconcileBundles,
+  resolvePnpmBinScript,
   resolvePnpmBins,
 } from '../src/operations.js'
 
@@ -95,6 +96,13 @@ describe('plugin operation service', () => {
       expect(bin.endsWith('.bin')).toBe(true)
       expect(existsSync(join(bin, 'pnpm.cmd')) || existsSync(join(bin, 'pnpm'))).toBe(true)
     }
+  })
+
+  it('resolves the pnpm bin script for hidden direct execution', () => {
+    const script = resolvePnpmBinScript(resolvePnpmBins(process.cwd()))
+    expect(script).not.toBeNull()
+    expect(script?.endsWith('pnpm.cjs')).toBe(true)
+    expect(existsSync(script ?? '')).toBe(true)
   })
 
   it('renders a remediation hint for pnpm store mismatches', () => {
