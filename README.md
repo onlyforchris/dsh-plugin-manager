@@ -50,9 +50,11 @@ DSH 的插件发现与生命周期管理入口。0.6.1 将“推荐插件”放�
 npm ci
 npm test
 npm run pack:release
-dsh plugin --profile web add .\dsh-plugin-manager-0.6.1.tgz
+dsh plugin --profile web add .\dsh-plugin-manager-0.6.2.tgz
 dsh web
 ~~~
+
+页面内的安装、升级、卸载直接以隐藏控制台运行 Profile 内置 pnpm（与 `dsh plugin` 命令等效，含相对路径锚定和 bundles 对账），Windows 上不会弹出 cmd 窗口，也不会受 PATH 上其他 pnpm 大版本影响。
 
 ## 故障排查
 

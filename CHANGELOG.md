@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.2
+
+- Run plugin mutations by invoking the Profile's pinned `pnpm` directly with a hidden console instead of routing through `dsh plugin`'s `shell: true` wrapper — no more visible cmd windows per operation on Windows.
+- Mirror the standard CLI semantics in-process: relative path anchoring to the invoking directory, `dsh.profile.bundles` reconciliation against the installed state, and the git `allowBuilds` hint.
+
 ## 0.6.1
 
 - Resolve `pnpm` deterministically for plugin operations: prefer the Profile's pinned pnpm 10.34.5 (and the manager's own dependency tree) over a mismatched pnpm on PATH, preventing `ERR_PNPM_UNEXPECTED_STORE` inside the page.

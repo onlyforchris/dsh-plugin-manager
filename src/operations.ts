@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { delimiter, dirname, join } from 'node:path'
+import { delimiter, dirname, join, resolve } from 'node:path'
 import type {
   PluginAction,
   PluginOperationRequest,
@@ -78,27 +79,126 @@ export function isInstallSpec(value: string): boolean {
     || POSIX_TARBALL_PATTERN.test(value)
 }
 
-export function createDshPluginRunner(input: {
-  readonly dshCliPath: string
-  readonly profileName: string
-  readonly profileRoot: string
-  readonly cwd: string
-  readonly timeoutMs?: number
-}): PluginCommandRunner {
-  return (action, target) => new Promise((resolve, reject) => {
+const RELATIVE_SPEC = /^(?<prefix>(?:file|link):)?(?<path>\.{1,2}(?:[/\\].*)?)$/
+const GIT_SPEC = /^git\+|^github:|\.git(?:#|$)/
+
+/**
+ * 与 `dsh plugin` 的 CLI 行为一致：把相对路径规格（`.`、`../x`、`file:./x`）
+ * 锚定到调用方目录而不是 Profile 目录；绝对路径和其他规格原样透传。
+ */
+export function anchorPathSpec(argument: string, cwd: string): string {
+  const match = RELATIVE_SPEC.exec(argument)
+  if (!match?.groups?.path) return argument
+  return `${match.groups.prefix ?? ''}${resolve(cwd, match.groups.path)}`
+}
+
+/**
+ * 判断 Profile 中已安装的某个依赖是否声明了 `dsh.bundle.patch`
+ * （即是否属于 profile layer bundle）。先查 hoisted 顶层，再兜底扫 .pnpm 虚拟 store。
+ */
+export async function declaresBundle(
+  profileRoot: string,
+  packageName: string,
+): Promise<boolean> {
+  const candidates = [join(profileRoot, 'node_modules', packageName, 'package.json')]
+  try {
+    const scoped = packageName.startsWith('@') ? packageName.replace('/', '+') : packageName
+    const entries = await readdir(join(profileRoot, 'node_modules', '.pnpm'))
+    for (const entry of entries) {
+      if (entry.startsWith(`${scoped}@`)) {
+        candidates.push(join(profileRoot, 'node_modules', '.pnpm', entry, 'node_modules', packageName, 'package.json'))
+      }
+    }
+  } catch {
+    // 没有 .pnpm 虚拟 store（非 pnpm 布局）
+  }
+  for (const candidate of candidates) {
+    try {
+      const manifest = JSON.parse(await readFile(candidate, 'utf8')) as {
+        dsh?: { bundle?: { patch?: string } }
+      }
+      return manifest.dsh?.bundle?.patch !== undefined
+    } catch {
+      // 继续下一个候选
+    }
+  }
+  return false
+}
+
+async function readDependencyNames(profileRoot: string): Promise<ReadonlySet<string>> {
+  try {
+    const manifest = JSON.parse(await readFile(join(profileRoot, 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>
+    }
+    return new Set(Object.keys(manifest.dependencies ?? {}))
+  } catch {
+    throw new PluginOperationError('Profile 状态异常：缺少可读的 package.json', 'invalid_request')
+  }
+}
+
+/**
+ * 镜像 `dsh plugin` 命令的 bundles 对账：依赖中声明 `dsh.bundle` 的包进入
+ * `dsh.profile.bundles` 层栈（按依赖顺序追加）；被移除或不再声明 bundle 的
+ * 依赖从层栈退出；模板自带的 in-box bundles（非依赖）永不触碰。
+ */
+export async function reconcileBundles(
+  profileRoot: string,
+  beforeDeps: ReadonlySet<string>,
+): Promise<void> {
+  const manifestPath = join(profileRoot, 'package.json')
+  let manifest: {
+    dependencies?: Record<string, string>
+    dsh?: { profile?: { bundles?: string[] } }
+  }
+  try {
+    manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+  } catch {
+    throw new PluginOperationError('Profile 状态异常：缺少可读的 package.json', 'invalid_request')
+  }
+  const dependencyNames = Object.keys(manifest.dependencies ?? {})
+  const plugins = manifest.dsh?.profile?.bundles ?? []
+  let changed = false
+  for (const packageName of dependencyNames) {
+    if (!plugins.includes(packageName) && await declaresBundle(profileRoot, packageName)) {
+      plugins.push(packageName)
+      changed = true
+    }
+  }
+  const dependencySet = new Set(dependencyNames)
+  for (const packageName of [...plugins]) {
+    const wasDependency = beforeDeps.has(packageName) || dependencySet.has(packageName)
+    const stillBundle = dependencySet.has(packageName) && await declaresBundle(profileRoot, packageName)
+    if (wasDependency && !stillBundle) {
+      plugins.splice(plugins.indexOf(packageName), 1)
+      changed = true
+    }
+  }
+  if (!changed) return
+  await writeFile(manifestPath, JSON.stringify({
+    ...manifest,
+    dsh: {
+      ...manifest.dsh,
+      profile: {
+        ...manifest.dsh?.profile,
+        bundles: plugins,
+      },
+    },
+  }, null, 2) + '\n', 'utf8')
+}
+
+function runPnpm(
+  args: readonly string[],
+  input: { readonly profileRoot: string; readonly timeoutMs?: number },
+): Promise<CommandResult> {
+  return new Promise((resolve, reject) => {
     const env = { ...process.env }
     const pathKey = Object.keys(env).find(key => key.toLowerCase() === 'path') ?? 'PATH'
     env[pathKey] = [...resolvePnpmBins(input.profileRoot), env[pathKey] ?? ''].join(delimiter)
 
-    const child = spawn(process.execPath, [
-      input.dshCliPath,
-      'plugin',
-      '--profile',
-      input.profileName,
-      action,
-      target,
-    ], {
-      cwd: input.cwd,
+    // 直接以隐藏控制台运行 Profile 内置 pnpm：不经过 `dsh plugin` 的
+    // shell 包装，Windows 上每次操作不会再弹出可见的 cmd 窗口。
+    const child = spawn('pnpm', [...args], {
+      cwd: input.profileRoot,
       env,
       shell: false,
       windowsHide: true,
@@ -121,6 +221,38 @@ export function createDshPluginRunner(input: {
       resolve({ exitCode, output: hint })
     })
   })
+}
+
+export function createDshPluginRunner(input: {
+  readonly profileRoot: string
+  readonly cwd: string
+  readonly timeoutMs?: number
+}): PluginCommandRunner {
+  return async (action, target) => {
+    const beforeDeps = await readDependencyNames(input.profileRoot)
+    const args = action === 'add'
+      ? ['add', anchorPathSpec(target, input.cwd)]
+      : [action, target]
+    const result = await runPnpm(args, input)
+    if (result.exitCode !== 0) {
+      if (action === 'add' && GIT_SPEC.test(target)) {
+        return {
+          ...result,
+          output: `${result.output}\n\n提示：git 仓库插件在安装时通过 prepare 脚本构建，pnpm 默认阻止——请把 pnpm 输出中列出的 key 加入 ${join(input.profileRoot, 'pnpm-workspace.yaml')} 的 allowBuilds 后重试。`,
+        }
+      }
+      return result
+    }
+    try {
+      await reconcileBundles(input.profileRoot, beforeDeps)
+    } catch (error) {
+      return {
+        ...result,
+        output: `${result.output}\n\n警告：pnpm 执行成功，但 bundles 对账失败：${error instanceof Error ? error.message : String(error)}`,
+      }
+    }
+    return result
+  }
 }
 
 function validateRequest(request: PluginOperationRequest, installedNames: ReadonlySet<string>): void {

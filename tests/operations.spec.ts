@@ -1,12 +1,27 @@
 import { existsSync } from 'node:fs'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  anchorPathSpec,
   isInstallSpec,
   PluginOperationService,
   pnpmStoreHint,
+  reconcileBundles,
   resolvePnpmBins,
 } from '../src/operations.js'
+
+const tempDirs: string[] = []
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+})
+async function tempProfile(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'dpm-test-'))
+  tempDirs.push(dir)
+  await mkdir(join(dir, 'node_modules'), { recursive: true })
+  return dir
+}
 
 describe('plugin operation service', () => {
   it('accepts only bounded package, GitHub, and local tarball specs', () => {
@@ -87,5 +102,42 @@ describe('plugin operation service', () => {
     expect(hint).toContain('pnpm 版本与 Profile 不匹配')
     expect(hint).toContain('pnpm 10.34.5')
     expect(hint).toContain(process.cwd())
+  })
+
+  it('anchors relative install specs to the invoking directory', () => {
+    const cwd = 'C:\\workspace\\demo'
+    expect(anchorPathSpec('.', cwd)).toBe('C:\\workspace\\demo')
+    expect(anchorPathSpec('../plugin', cwd)).toBe('C:\\workspace\\plugin')
+    expect(anchorPathSpec('file:./a.tgz', cwd)).toBe('file:C:\\workspace\\demo\\a.tgz')
+    expect(anchorPathSpec('D:\\plugins\\demo.tgz', cwd)).toBe('D:\\plugins\\demo.tgz')
+    expect(anchorPathSpec('github:owner/repo#main', cwd)).toBe('github:owner/repo#main')
+    expect(anchorPathSpec('@scope/plugin@1.2.3', cwd)).toBe('@scope/plugin@1.2.3')
+  })
+
+  it('reconciles profile bundles against the installed state', async () => {
+    const dir = await tempProfile()
+    await writeFile(join(dir, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-test',
+      dependencies: {
+        'a-bundle': '1.0.0',
+        'b-plain': '1.0.0',
+      },
+      dsh: { profile: { bundles: ['in-box-base', 'a-bundle', 'c-removed'] } },
+    }, null, 2), 'utf8')
+    await mkdir(join(dir, 'node_modules', 'a-bundle'), { recursive: true })
+    await writeFile(join(dir, 'node_modules', 'a-bundle', 'package.json'), JSON.stringify({
+      name: 'a-bundle',
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    }), 'utf8')
+    await mkdir(join(dir, 'node_modules', 'b-plain'), { recursive: true })
+    await writeFile(join(dir, 'node_modules', 'b-plain', 'package.json'), JSON.stringify({
+      name: 'b-plain',
+    }), 'utf8')
+
+    // beforeDeps = pnpm 运行前：a-bundle 与 c-removed 都曾是依赖，c-removed 已被移除
+    await reconcileBundles(dir, new Set(['a-bundle', 'c-removed']))
+
+    const manifest = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8'))
+    expect(manifest.dsh.profile.bundles).toEqual(['in-box-base', 'a-bundle'])
   })
 })

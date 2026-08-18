@@ -69,8 +69,6 @@ export function apply(ctx: DshHostContext, config: Config = {}): void {
   const dshCliPath = process.argv[1] ?? "";
   const service = new PluginOperationService(
     createDshPluginRunner({
-      dshCliPath,
-      profileName,
       profileRoot: root,
       cwd: process.cwd(),
     }),
