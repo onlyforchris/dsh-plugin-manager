@@ -1,6 +1,6 @@
 # DSH Plugin Manager
 
-DSH 的插件发现与生命周期管理入口。0.5.4 将“推荐插件”放到首屏，在同一页面完成发现、安装、升级、卸载和结构体检。
+DSH 的插件发现与生命周期管理入口。0.6.0 将“推荐插件”放到首屏，在同一页面完成发现、安装、升级、卸载和结构体检。
 
 ## 使用
 
@@ -50,7 +50,7 @@ DSH 的插件发现与生命周期管理入口。0.5.4 将“推荐插件”放�
 npm ci
 npm test
 npm run pack:release
-dsh plugin --profile web add .\dsh-plugin-manager-0.5.4.tgz
+dsh plugin --profile web add .\dsh-plugin-manager-0.6.0.tgz
 dsh web
 ~~~
 
@@ -62,4 +62,4 @@ dsh web
 - 不把结构体检称为漏洞扫描。
 - 管家不能从运行页面升级或卸载自身。
 
-当前版本针对 @deepseek-ai/dsh 0.1.0-rc.6 构建。
+当前版本针对 @deepseek-ai/dsh 0.1.0-rc.7 构建。

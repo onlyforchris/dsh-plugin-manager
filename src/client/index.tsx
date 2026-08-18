@@ -85,16 +85,31 @@ interface Confirmation {
 type RestartState =
   | { readonly status: "idle" }
   | { readonly status: "restarting"; readonly action: PluginAction }
-  | { readonly status: "failed"; readonly message: string };
+  | {
+      readonly status: "failed";
+      readonly action: PluginAction;
+      readonly message: string;
+    };
 
+async function readJson<T>(response: Response, unavailable: string) {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    throw Error(unavailable);
+  }
+  try {
+    return (await response.json()) as T;
+  } catch {
+    throw Error(unavailable);
+  }
+}
 async function get<T>(path: string, signal: AbortSignal) {
   const response = await fetch(path, {
     cache: "no-store",
     credentials: "same-origin",
     signal,
   });
-  if (!response.ok) throw Error(String(response.status));
-  return (await response.json()) as T;
+  if (!response.ok) throw Error(`插件管家服务暂不可用（HTTP ${response.status}）`);
+  return readJson<T>(response, "插件后端尚未就绪，请稍后刷新重试");
 }
 async function load(signal: AbortSignal) {
   const [report, inventory, updates, catalog] = await Promise.all([
@@ -115,9 +130,9 @@ async function operation(action: PluginAction, target: string) {
     },
     body: JSON.stringify({ action, target }),
   });
-  const payload = (await response.json()) as
-    | PluginOperationResult
-    | { message?: string };
+  const payload = await readJson<
+    PluginOperationResult | { message?: string }
+  >(response, "插件后端尚未就绪，请稍后重试");
   if (!response.ok)
     throw Error(
       "message" in payload && payload.message ? payload.message : "操作失败",
@@ -130,33 +145,60 @@ async function restartDsh() {
     credentials: "same-origin",
     headers: { "x-dsh-plugin-manager": "1" },
   });
-  const payload = (await response.json()) as {
+  const payload = await readJson<{
     accepted?: boolean;
     message?: string;
-  };
+  }>(response, "DSH 重启服务尚未就绪，请稍后重试");
   if (!response.ok || payload.accepted !== true)
     throw Error(payload.message ?? "无法安排 DSH 自动重启");
 }
 const delay = (milliseconds: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
-async function waitForRestart() {
+async function probeDiagnostics(): Promise<boolean> {
+  try {
+    const response = await fetch(DIAGNOSTICS_PATH, {
+      cache: "no-store",
+      credentials: "same-origin",
+      signal: AbortSignal.timeout(2_500),
+    });
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!response.ok || !contentType.toLowerCase().includes("application/json"))
+      return false;
+    const report = (await response.json()) as { schemaVersion?: number };
+    return report.schemaVersion === 1;
+  } catch {
+    return false;
+  }
+}
+export async function waitForRestart(
+  probe: () => Promise<boolean> = probeDiagnostics,
+  reload: () => void = () => window.location.reload(),
+) {
   let sawOffline = false;
-  const deadline = Date.now() + 45_000;
+  let consecutiveReady = 0;
+  const deadline = Date.now() + 60_000;
   await delay(250);
   while (Date.now() < deadline) {
-    try {
-      const response = await fetch(DIAGNOSTICS_PATH, {
-        cache: "no-store",
-        credentials: "same-origin",
-      });
-      if (response.ok && sawOffline) {
-        window.location.reload();
-        return;
+    if (await probe()) {
+      if (sawOffline) {
+        consecutiveReady += 1;
+        if (consecutiveReady >= 2) {
+          await delay(900);
+          reload();
+          return;
+        }
       }
-    } catch {
+    } else {
       sawOffline = true;
+      consecutiveReady = 0;
     }
-    await delay(250);
+    await delay(300);
+  }
+  // 兜底恢复：重启其实已完成、只是检测被挂起连接或页面节流延误时，
+  // 服务已恢复就直接刷新，避免留下“自动重启失败”的误报横幅。
+  if (await probe()) {
+    reload();
+    return;
   }
   throw Error("DSH 重启超时，请检查重启日志后重试");
 }
@@ -665,6 +707,7 @@ export function PluginManagerTab(): ReactNode {
         } catch (error) {
           setRestart({
             status: "failed",
+            action: request.action,
             message:
               error instanceof Error ? error.message : "DSH 自动重启失败",
           });
@@ -733,6 +776,25 @@ export function PluginManagerTab(): ReactNode {
       });
     }
   }, []);
+
+  const retryRestart = useCallback(
+    async (action: PluginAction) => {
+      setRestart({ status: "restarting", action });
+      try {
+        await restartDsh();
+        await waitForRestart();
+      } catch (error) {
+        setRestart({
+          status: "failed",
+          action,
+          message:
+            error instanceof Error ? error.message : "DSH 自动重启失败",
+        });
+        refresh();
+      }
+    },
+    [refresh],
+  );
 
   const installed =
       page.status === "ready"
@@ -806,9 +868,17 @@ export function PluginManagerTab(): ReactNode {
         <section className="dpm-operation" data-status="error" role="alert">
           <strong>插件已更新，但自动重启没有完成</strong>
           <span>{restart.message}</span>
-          <button className="dpm-button" onClick={() => void copyRestart()}>
-            复制备用重启命令
-          </button>
+          <div className="dpm-restart-fallback">
+            <button
+              className="dpm-button"
+              onClick={() => void retryRestart(restart.action)}
+            >
+              重试自动重启
+            </button>
+            <button className="dpm-button" onClick={() => void copyRestart()}>
+              复制备用重启命令
+            </button>
+          </div>
         </section>
       ) : null}
       {op.status === "running" ? (

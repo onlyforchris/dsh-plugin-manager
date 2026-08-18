@@ -3,3 +3,6 @@ lib/
 coverage/
 *.tgz
 *.log
+.localappdata/
+.npm-cache/
+output/

@@ -8,11 +8,14 @@ const { openSync, closeSync } = require("node:fs");
 const net = require("node:net");
 const [cli, profile, cwd, host, portText, logPath, ...appArgs] = process.argv.slice(1);
 const port = Number(portText);
+const MAX_STARTS = 3;
 let attempts = 0;
 let starting = false;
+let starts = 0;
 function start() {
-  if (starting) return;
+  if (starting || starts >= MAX_STARTS) return;
   starting = true;
+  starts += 1;
   const output = openSync(logPath, "a");
   const child = spawn(process.execPath, [cli, "--profile", profile, ...appArgs], {
     cwd,
@@ -21,9 +24,22 @@ function start() {
     windowsHide: true,
     stdio: ["ignore", output, output],
   });
-  child.unref();
   closeSync(output);
-  process.exit(0);
+  let done = false;
+  const settle = () => {
+    if (done) return;
+    done = true;
+    child.unref();
+    process.exit(0);
+  };
+  // 启动后立刻崩溃（如依赖尚未就绪）：短暂等待后重新探测并再次拉起。
+  child.once("exit", () => {
+    if (done) return;
+    starting = false;
+    setTimeout(probe, 500);
+  });
+  // 存活 20 秒即视为启动成功，助手退出，不再干预。
+  setTimeout(settle, 20000);
 }
 function probe() {
   const socket = net.connect({ host, port });
@@ -37,7 +53,7 @@ function probe() {
       return;
     }
     attempts += 1;
-    if (attempts >= 120) process.exit(1);
+    if (attempts >= 480) process.exit(1);
     setTimeout(probe, 250);
   }
   socket.once("connect", () => finish(false));

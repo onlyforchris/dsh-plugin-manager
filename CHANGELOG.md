@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0
+
+- Add a polished DSH-native visual system for recommendations, installed plugins, notices, actions, dialogs, and diagnostics.
+- Replace raw JSON parsing failures with clear backend-readiness messages.
+- Require consecutive valid diagnostics responses plus a startup grace period before restoring the page after restart.
+- Improve responsive layouts, keyboard focus, reduced-motion support, and progressive disclosure styling.
+- Remove the left accent bar from recommendation cards; card states now show through border and badge colors only.
+- Harden restart recovery: per-probe fetch timeout, a deadline recovery check that reloads when the service is actually back, a longer restart-helper probe window, crash retry when the relaunched app exits immediately, and an in-place "retry auto restart" action on the failure banner.
+
+
 ## 0.5.4
 
 - Replace browser-native confirmations with an accessible in-app install review dialog.
