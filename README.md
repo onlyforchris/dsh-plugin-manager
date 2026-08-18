@@ -1,6 +1,6 @@
 # DSH Plugin Manager
 
-DSH 的插件发现与生命周期管理入口。0.6.0 将“推荐插件”放到首屏，在同一页面完成发现、安装、升级、卸载和结构体检。
+DSH 的插件发现与生命周期管理入口。0.6.1 将“推荐插件”放到首屏，在同一页面完成发现、安装、升级、卸载和结构体检。
 
 ## 使用
 
@@ -50,8 +50,19 @@ DSH 的插件发现与生命周期管理入口。0.6.0 将“推荐插件”放�
 npm ci
 npm test
 npm run pack:release
-dsh plugin --profile web add .\dsh-plugin-manager-0.6.0.tgz
+dsh plugin --profile web add .\dsh-plugin-manager-0.6.1.tgz
 dsh web
+~~~
+
+## 故障排查
+
+### pnpm store 版本不匹配（ERR_PNPM_UNEXPECTED_STORE）
+
+Profile 的依赖由 pnpm 10.x（store v10）安装；如果 PATH 上的 pnpm 是其他大版本（如 11.x），终端里手动执行 `dsh plugin` 会报 `ERR_PNPM_UNEXPECTED_STORE`，pnpm 会拒绝继续。插件管家在页面内执行操作时不受影响——它会优先使用 Profile 内置的 pnpm 10.34.5（`<profile>/node_modules/.bin`）。终端手动执行时，把 Profile 内置 pnpm 放到 PATH 最前即可：
+
+~~~powershell
+$env:PATH = "$env:USERPROFILE\.dsh\profiles\web\node_modules\.bin;$env:PATH"
+dsh plugin --profile web remove some-plugin
 ~~~
 
 ## 产品边界

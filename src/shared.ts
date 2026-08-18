@@ -1,5 +1,5 @@
 export const PACKAGE_NAME = "dsh-plugin-manager";
-export const MANAGER_VERSION = "0.6.0";
+export const MANAGER_VERSION = "0.6.1";
 export const DIAGNOSTICS_PATH = "/dsh-plugin-manager/api/diagnostics";
 export const INVENTORY_PATH = "/dsh-plugin-manager/api/plugins";
 export const OPERATIONS_PATH = "/dsh-plugin-manager/api/operations";

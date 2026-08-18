@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process'
-import { delimiter, join } from 'node:path'
+import { existsSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { delimiter, dirname, join } from 'node:path'
 import type {
   PluginAction,
   PluginOperationRequest,
@@ -7,6 +9,7 @@ import type {
 } from './shared.js'
 import { PACKAGE_NAME } from './shared.js'
 
+const require = createRequire(import.meta.url)
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i
 const NPM_SPEC_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(?:@[a-z0-9._*^~+-]+)?$/i
 const GITHUB_URL_PATTERN = /^https:\/\/github\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+(?:\.git)?(?:#[a-z0-9._/-]+)?$/i
@@ -14,6 +17,8 @@ const GITHUB_SPEC_PATTERN = /^github:[a-z0-9_.-]+\/[a-z0-9_.-]+(?:#[a-z0-9._/-]+
 const WINDOWS_TARBALL_PATTERN = /^(?:file:)?[a-z]:[\\/][a-z0-9._\\/-]+\.tgz$/i
 const POSIX_TARBALL_PATTERN = /^(?:file:)?\/[a-z0-9._/-]+\.tgz$/i
 const MAX_OUTPUT = 32_000
+const PNPM_STORE_MISMATCH =
+  /ERR_PNPM_UNEXPECTED_STORE|ERR_PNPM_ABORTED_REMOVE_MODULES_DIR|different major version of pnpm|wants to use the store at/
 
 export class PluginOperationError extends Error {
   constructor(
@@ -39,6 +44,32 @@ function appendOutput(current: string, chunk: Buffer | string): string {
   return combined.length <= MAX_OUTPUT ? combined : combined.slice(combined.length - MAX_OUTPUT)
 }
 
+/**
+ * Directories whose `.bin` shims must win over the ambient PATH when the
+ * plugin command spawns `pnpm`: the profile's own installation (the pinned
+ * pnpm 10.34.5 the manager depends on is hoisted there) and the manager's
+ * own dependency tree as a fallback. A PATH pnpm of a different major would
+ * refuse to touch a store created by another major
+ * (`ERR_PNPM_UNEXPECTED_STORE`), so the operation must resolve pnpm
+ * deterministically instead of trusting the environment.
+ */
+export function resolvePnpmBins(profileRoot: string): string[] {
+  const candidates: string[] = [join(profileRoot, 'node_modules', '.bin')]
+  try {
+    const pnpmPackage = require.resolve('pnpm/package.json')
+    candidates.push(join(dirname(pnpmPackage), '..', '.bin'))
+  } catch {
+    // 管理器依赖中没有 pnpm（异常安装），退回 PATH 上的 pnpm
+  }
+  return [...new Set(candidates)].filter((dir) => existsSync(dir))
+}
+
+/** 中文指引：pnpm 版本与 Profile 的 store 不匹配时如何修复。 */
+export function pnpmStoreHint(profileRoot: string): string {
+  const profilePnpmBin = join(profileRoot, 'node_modules', '.bin')
+  return `检测到 pnpm 版本与 Profile 不匹配：Profile 的依赖由 pnpm 10.x（store v10）安装，而本次命令使用的 pnpm 是 11.x（store v11），pnpm 拒绝继续。插件管家会优先使用 Profile 内置的 pnpm 10.34.5（${profilePnpmBin}）；若你在终端手动执行 dsh plugin 命令，请先执行：set PATH=${profilePnpmBin};%PATH%（PowerShell：$env:PATH="${profilePnpmBin};$env:PATH"），然后重试。`
+}
+
 export function isInstallSpec(value: string): boolean {
   return NPM_SPEC_PATTERN.test(value)
     || GITHUB_URL_PATTERN.test(value)
@@ -57,7 +88,7 @@ export function createDshPluginRunner(input: {
   return (action, target) => new Promise((resolve, reject) => {
     const env = { ...process.env }
     const pathKey = Object.keys(env).find(key => key.toLowerCase() === 'path') ?? 'PATH'
-    env[pathKey] = `${join(input.profileRoot, 'node_modules', '.bin')}${delimiter}${env[pathKey] ?? ''}`
+    env[pathKey] = [...resolvePnpmBins(input.profileRoot), env[pathKey] ?? ''].join(delimiter)
 
     const child = spawn(process.execPath, [
       input.dshCliPath,
@@ -82,7 +113,12 @@ export function createDshPluginRunner(input: {
     const timeout = setTimeout(() => child.kill(), input.timeoutMs ?? 120_000)
     child.once('close', code => {
       clearTimeout(timeout)
-      resolve({ exitCode: code ?? 1, output: output.trim() })
+      const exitCode = code ?? 1
+      const trimmed = output.trim()
+      const hint = exitCode !== 0 && PNPM_STORE_MISMATCH.test(trimmed)
+        ? `${pnpmStoreHint(input.profileRoot)}\n\n${trimmed}`
+        : trimmed
+      resolve({ exitCode, output: hint })
     })
   })
 }

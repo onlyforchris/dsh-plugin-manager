@@ -1,7 +1,11 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   isInstallSpec,
   PluginOperationService,
+  pnpmStoreHint,
+  resolvePnpmBins,
 } from '../src/operations.js'
 
 describe('plugin operation service', () => {
@@ -66,5 +70,22 @@ describe('plugin operation service', () => {
     })).rejects.toMatchObject({ code: 'busy' })
     release?.()
     await first
+  })
+
+  it('prefers the profile and manager pnpm bins over the ambient PATH', () => {
+    const bins = resolvePnpmBins(process.cwd())
+    expect(bins.length).toBeGreaterThan(0)
+    // 每个候选都必须是真实存在的 .bin 目录，且包含 pnpm 入口
+    for (const bin of bins) {
+      expect(bin.endsWith('.bin')).toBe(true)
+      expect(existsSync(join(bin, 'pnpm.cmd')) || existsSync(join(bin, 'pnpm'))).toBe(true)
+    }
+  })
+
+  it('renders a remediation hint for pnpm store mismatches', () => {
+    const hint = pnpmStoreHint(process.cwd())
+    expect(hint).toContain('pnpm 版本与 Profile 不匹配')
+    expect(hint).toContain('pnpm 10.34.5')
+    expect(hint).toContain(process.cwd())
   })
 })

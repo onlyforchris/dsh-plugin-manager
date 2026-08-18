@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1
+
+- Resolve `pnpm` deterministically for plugin operations: prefer the Profile's pinned pnpm 10.34.5 (and the manager's own dependency tree) over a mismatched pnpm on PATH, preventing `ERR_PNPM_UNEXPECTED_STORE` inside the page.
+- Translate pnpm store-major mismatches into a clear Chinese remediation hint in the operation output.
+- Document the terminal-side pnpm mismatch workaround in the README.
+
 ## 0.6.0
 
 - Add a polished DSH-native visual system for recommendations, installed plugins, notices, actions, dialogs, and diagnostics.
