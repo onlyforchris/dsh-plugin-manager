@@ -1,5 +1,5 @@
 export const PACKAGE_NAME = "dsh-plugin-manager";
-export const MANAGER_VERSION = "0.4.0";
+export const MANAGER_VERSION = "0.5.0";
 export const DIAGNOSTICS_PATH = "/dsh-plugin-manager/api/diagnostics";
 export const INVENTORY_PATH = "/dsh-plugin-manager/api/plugins";
 export const OPERATIONS_PATH = "/dsh-plugin-manager/api/operations";
@@ -64,8 +64,16 @@ export interface PluginUpdatesReport {
   readonly updates: readonly PluginUpdateInfo[];
 }
 export type CatalogVerificationStatus =
-  "verified" | "community" | "experimental";
+  | "verified"
+  | "community"
+  | "experimental";
 export type CatalogSource = "remote" | "cache" | "builtin";
+export type CatalogLaunchKind = "settings" | "copy-prompt";
+export interface CatalogLaunchAction {
+  readonly kind: CatalogLaunchKind;
+  readonly label: string;
+  readonly target: string;
+}
 export interface PluginCatalogEntry {
   readonly id: string;
   readonly name: string;
@@ -83,6 +91,8 @@ export interface PluginCatalogEntry {
   readonly license: string;
   readonly recommendation: string;
   readonly permissions: readonly string[];
+  readonly firstUse: readonly string[];
+  readonly launch: CatalogLaunchAction | null;
 }
 export interface PluginRegistryDocument {
   readonly schemaVersion: 1;

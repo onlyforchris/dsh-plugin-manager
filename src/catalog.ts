@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isInstallSpec } from "./operations.js";
 import type {
+  CatalogLaunchAction,
   CatalogSource,
   PluginCatalog,
   PluginCatalogEntry,
@@ -21,6 +22,16 @@ interface CacheRecord {
 }
 function str(v: unknown, max = 500): v is string {
   return typeof v === "string" && v.length > 0 && v.length <= max;
+}
+function launch(v: unknown): v is CatalogLaunchAction | null {
+  if (v === null) return true;
+  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+  const x = v as Record<string, unknown>;
+  return (
+    (x.kind === "settings" || x.kind === "copy-prompt") &&
+    str(x.label, 60) &&
+    str(x.target, 500)
+  );
 }
 function entry(v: unknown): v is PluginCatalogEntry {
   if (!v || typeof v !== "object" || Array.isArray(v)) return false;
@@ -50,7 +61,12 @@ function entry(v: unknown): v is PluginCatalogEntry {
     str(x.recommendation) &&
     Array.isArray(x.permissions) &&
     x.permissions.length <= 20 &&
-    x.permissions.every((p) => str(p, 100))
+    x.permissions.every((p) => str(p, 100)) &&
+    Array.isArray(x.firstUse) &&
+    x.firstUse.length > 0 &&
+    x.firstUse.length <= 5 &&
+    x.firstUse.every((step) => str(step, 200)) &&
+    launch(x.launch)
   );
 }
 export function parseRegistryDocument(v: unknown): PluginRegistryDocument {

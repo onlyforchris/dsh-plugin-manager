@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0
+
+- Turn recommendations into a first-use workflow with explicit install lifecycle states.
+- Add catalog-owned first-use steps and constrained launch actions for settings or copyable prompts.
+- Show available, installing, pending restart, installed, and failed states without relying on color alone.
+- Keep permissions and installed-plugin management progressively disclosed.
+- Improve keyboard focus, status announcements, narrow-screen layout, and reduced-motion behavior.
+
 ## 0.4.0
 
 - Make plugin recommendations the primary settings experience.

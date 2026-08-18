@@ -23,6 +23,8 @@ const item = {
   license: "MIT",
   recommendation: "Useful verified workflow",
   permissions: [],
+  firstUse: ["Open settings", "Run the first task"],
+  launch: { kind: "settings" as const, label: "Open demo", target: "Demo" },
 };
 const document = {
   schemaVersion: 1 as const,
@@ -42,6 +44,18 @@ describe("recommendation catalog", () => {
       parseRegistryDocument({
         ...document,
         entries: [{ ...item, installSpec: "demo;calc" }],
+      }),
+    ).toThrow();
+    expect(() =>
+      parseRegistryDocument({
+        ...document,
+        entries: [{ ...item, firstUse: [] }],
+      }),
+    ).toThrow();
+    expect(() =>
+      parseRegistryDocument({
+        ...document,
+        entries: [{ ...item, launch: { kind: "url", label: "Open", target: "/" } }],
       }),
     ).toThrow();
   });
