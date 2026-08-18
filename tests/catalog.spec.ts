@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -30,6 +30,12 @@ const document = {
   entries: [item],
 };
 describe("recommendation catalog", () => {
+  it("keeps the published registry compatible with the runtime schema", async () => {
+    const published = JSON.parse(
+      await readFile(new URL("../registry/plugins.json", import.meta.url), "utf8"),
+    );
+    expect(parseRegistryDocument(published).entries).toHaveLength(5);
+  });
   it("validates entries and rejects unsafe install sources", () => {
     expect(parseRegistryDocument(document).entries[0]?.id).toBe("demo-plugin");
     expect(() =>
