@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   CATALOG_PATH,
   DIAGNOSTICS_PATH,
@@ -9,235 +15,469 @@ import {
   type ManagedPlugin,
   type PluginAction,
   type PluginCatalog,
+  type PluginCatalogEntry,
   type PluginInventory,
   type PluginOperationResult,
   type PluginUpdateInfo,
   type PluginUpdatesReport,
-} from '../shared.js'
-import { CLIENT_STYLES } from './styles.js'
-
-interface ClientSlots {
-  inject(name: string, provider: () => unknown): unknown
-  register(options: Record<string, unknown>, component: () => ReactNode): unknown
+} from "../shared.js";
+import { CLIENT_STYLES } from "./styles.js";
+interface Slots {
+  inject(n: string, p: () => unknown): unknown;
+  register(o: Record<string, unknown>, c: () => ReactNode): unknown;
 }
-
-interface DshClientContext {
-  readonly slots: ClientSlots
-  effect(setup: () => void | (() => void), label?: string): void
+interface Context {
+  readonly slots: Slots;
+  effect(s: () => void | (() => void), l?: string): void;
 }
-
-interface ReadyPage {
-  readonly status: 'ready'
-  readonly report: DiagnosticReport
-  readonly inventory: PluginInventory
-  readonly updates: PluginUpdatesReport
-  readonly catalog: PluginCatalog
+interface Ready {
+  readonly status: "ready";
+  readonly report: DiagnosticReport;
+  readonly inventory: PluginInventory;
+  readonly updates: PluginUpdatesReport;
+  readonly catalog: PluginCatalog;
 }
-type PageState =
-  | { readonly status: 'loading' }
-  | { readonly status: 'error'; readonly message: string }
-  | ReadyPage
-
-type OperationState =
-  | { readonly status: 'idle' }
-  | { readonly status: 'running'; readonly label: string }
-  | { readonly status: 'error'; readonly message: string }
-  | { readonly status: 'done'; readonly result: PluginOperationResult }
-
-async function loadJson<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, { method: 'GET', cache: 'no-store', credentials: 'same-origin', ...(signal ? { signal } : {}) })
-  if (!response.ok) throw new Error(`request failed: ${response.status}`)
-  return await response.json() as T
+type Page =
+  | { readonly status: "loading" }
+  | { readonly status: "error"; readonly message: string }
+  | Ready;
+type Op =
+  | { readonly status: "idle" }
+  | { readonly status: "running"; readonly label: string }
+  | { readonly status: "error"; readonly message: string }
+  | { readonly status: "done"; readonly result: PluginOperationResult };
+async function get<T>(p: string, s: AbortSignal) {
+  const r = await fetch(p, {
+    cache: "no-store",
+    credentials: "same-origin",
+    signal: s,
+  });
+  if (!r.ok) throw Error(String(r.status));
+  return (await r.json()) as T;
 }
-
-async function loadPage(signal: AbortSignal): Promise<Omit<ReadyPage, 'status'>> {
+async function load(s: AbortSignal) {
   const [report, inventory, updates, catalog] = await Promise.all([
-    loadJson<DiagnosticReport>(DIAGNOSTICS_PATH, signal),
-    loadJson<PluginInventory>(INVENTORY_PATH, signal),
-    loadJson<PluginUpdatesReport>(UPDATES_PATH, signal),
-    loadJson<PluginCatalog>(CATALOG_PATH, signal),
-  ])
-  return { report, inventory, updates, catalog }
+    get<DiagnosticReport>(DIAGNOSTICS_PATH, s),
+    get<PluginInventory>(INVENTORY_PATH, s),
+    get<PluginUpdatesReport>(UPDATES_PATH, s),
+    get<PluginCatalog>(CATALOG_PATH, s),
+  ]);
+  return { report, inventory, updates, catalog };
 }
-
-async function sendOperation(action: PluginAction, target: string): Promise<PluginOperationResult> {
-  const response = await fetch(OPERATIONS_PATH, {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'content-type': 'application/json', 'x-dsh-plugin-manager': '1' },
-    body: JSON.stringify({ action, target }),
-  })
-  const payload = await response.json() as PluginOperationResult | { readonly message?: string }
-  if (!response.ok) throw new Error('message' in payload && payload.message ? payload.message : `操作失败：HTTP ${response.status}`)
-  return payload as PluginOperationResult
+async function operation(action: PluginAction, target: string) {
+  const r = await fetch(OPERATIONS_PATH, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "content-type": "application/json",
+        "x-dsh-plugin-manager": "1",
+      },
+      body: JSON.stringify({ action, target }),
+    }),
+    p = (await r.json()) as PluginOperationResult | { message?: string };
+  if (!r.ok) throw Error("message" in p && p.message ? p.message : "操作失败");
+  return p as PluginOperationResult;
 }
-
-function actionLabel(action: PluginAction, target: string): string {
-  if (action === 'add') return `安装 ${target}`
-  if (action === 'update') return `升级 ${target}`
-  return `卸载 ${target}`
-}
-
-function PluginCard(props: {
-  readonly plugin: ManagedPlugin
-  readonly update: PluginUpdateInfo | undefined
-  readonly disabled: boolean
-  readonly onAction: (action: PluginAction, target: string) => void
-}): ReactNode {
-  const { plugin, update } = props
+const trust = (s: PluginCatalogEntry["verificationStatus"]) =>
+  s === "verified" ? "已验证" : s === "community" ? "社区插件" : "实验性";
+function Installed({
+  p,
+  u,
+  busy,
+  run,
+}: {
+  p: ManagedPlugin;
+  u: PluginUpdateInfo | undefined;
+  busy: boolean;
+  run: (a: PluginAction, t: string) => void;
+}) {
   return (
-    <li className="dpm-plugin" data-health={plugin.health}>
+    <li className="dpm-plugin" data-health={p.health}>
       <div className="dpm-plugin-main">
-        <span className="dpm-health-dot" data-health={plugin.health} aria-hidden="true" />
+        <span className="dpm-health-dot" data-health={p.health} />
         <div className="dpm-plugin-copy">
           <div className="dpm-plugin-title">
-            <strong>{plugin.name}</strong>
-            {plugin.version ? <span className="dpm-version">v{plugin.version}</span> : null}
-            {plugin.bundle ? <span className="dpm-kind">Bundle</span> : null}
-            {plugin.client ? <span className="dpm-kind">Client</span> : null}
-            {plugin.manager ? <span className="dpm-kind">管家自身</span> : null}
-            {update?.state === 'available' ? <span className="dpm-update-badge">有新版本</span> : null}
+            <strong>{p.name}</strong>
+            {p.version ? (
+              <span className="dpm-version">v{p.version}</span>
+            ) : null}
+            {p.bundle ? <span className="dpm-kind">Bundle</span> : null}
+            {p.client ? <span className="dpm-kind">Client</span> : null}
+            {u?.state === "available" ? (
+              <span className="dpm-update-badge">
+                可升级至 {u.latestVersion}
+              </span>
+            ) : null}
           </div>
-          <code className="dpm-spec">{plugin.spec}</code>
-          {update ? <span className="dpm-update-copy" data-state={update.state}>{update.message}</span> : null}
+          <code className="dpm-spec">{p.spec}</code>
+          {u ? (
+            <span className="dpm-update-copy" data-state={u.state}>
+              {u.message}
+            </span>
+          ) : null}
         </div>
-        <span className="dpm-health-label" data-health={plugin.health}>
-          {plugin.health === 'healthy' ? '正常' : plugin.health === 'warning' ? '提醒' : '异常'}
+        <span className="dpm-health-label" data-health={p.health}>
+          {p.health === "healthy"
+            ? "正常"
+            : p.health === "warning"
+              ? "提醒"
+              : "异常"}
         </span>
       </div>
-      {plugin.issues.length > 0 ? (
-        <ul className="dpm-issues">{plugin.issues.map(issue => <li key={issue.code} data-severity={issue.severity}>{issue.message}</li>)}</ul>
-      ) : <p className="dpm-healthy-copy">Manifest、Bundle 注册和声明文件检查通过。</p>}
-      {!plugin.manager ? (
-        <div className="dpm-plugin-actions">
-          <button type="button" disabled={props.disabled || !plugin.canUpdate} onClick={() => props.onAction('update', plugin.name)}>
-            {update?.state === 'available' ? `升级到 ${update.latestVersion}` : '升级'}
-          </button>
-          <button className="dpm-danger" type="button" disabled={props.disabled || !plugin.canRemove} onClick={() => props.onAction('remove', plugin.name)}>卸载</button>
-        </div>
-      ) : null}
+      {p.issues.length ? (
+        <ul className="dpm-issues">
+          {p.issues.map((i) => (
+            <li key={i.code}>{i.message}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="dpm-healthy-copy">结构检查通过。</p>
+      )}
+      <div className="dpm-plugin-actions">
+        <button
+          disabled={busy || !p.canUpdate}
+          onClick={() => run("update", p.name)}
+        >
+          升级
+        </button>
+        <button
+          className="dpm-danger"
+          disabled={busy || !p.canRemove}
+          onClick={() => run("remove", p.name)}
+        >
+          卸载
+        </button>
+      </div>
     </li>
-  )
+  );
 }
-
-export function PluginManagerTab(): ReactNode {
-  const [request, setRequest] = useState(0)
-  const [page, setPage] = useState<PageState>({ status: 'loading' })
-  const [installTarget, setInstallTarget] = useState('')
-  const [operation, setOperation] = useState<OperationState>({ status: 'idle' })
-
-  useEffect(() => {
-    const controller = new AbortController()
-    setPage({ status: 'loading' })
-    void loadPage(controller.signal).then(
-      value => { if (!controller.signal.aborted) setPage({ status: 'ready', ...value }) },
-      () => { if (!controller.signal.aborted) setPage({ status: 'error', message: '无法读取插件清单、版本或目录状态。' }) },
-    )
-    return () => controller.abort()
-  }, [request])
-
-  const refresh = useCallback(() => setRequest(value => value + 1), [])
-  const operating = operation.status === 'running'
-  const healthSummary = useMemo(() => {
-    if (page.status !== 'ready') return { healthy: 0, warning: 0, error: 0 }
-    return page.inventory.plugins.reduce((summary, plugin) => ({ ...summary, [plugin.health]: summary[plugin.health] + 1 }), { healthy: 0, warning: 0, error: 0 })
-  }, [page])
-
-  const runOperation = useCallback(async (action: PluginAction, rawTarget: string) => {
-    const target = rawTarget.trim()
-    if (!target) {
-      setOperation({ status: 'error', message: '请先输入要安装的插件包或本地 .tgz 路径。' })
-      return
-    }
-    const label = actionLabel(action, target)
-    if (!window.confirm(`确认${label}？\n\n插件管家将执行标准 dsh plugin 命令并修改当前 web Profile。`)) return
-    setOperation({ status: 'running', label })
-    try {
-      const result = await sendOperation(action, target)
-      setOperation({ status: 'done', result })
-      if (result.success) {
-        if (action === 'add') setInstallTarget('')
-        refresh()
-      }
-    } catch (error) {
-      setOperation({ status: 'error', message: error instanceof Error ? error.message : '插件操作失败' })
-    }
-  }, [refresh])
-
-  const updateMap = page.status === 'ready' ? new Map(page.updates.updates.map(item => [item.name, item])) : new Map<string, PluginUpdateInfo>()
-  const installed = page.status === 'ready' ? new Set(page.inventory.plugins.map(item => item.name)) : new Set<string>()
-
+function Recommended({
+  e,
+  installed,
+  busy,
+  install,
+}: {
+  e: PluginCatalogEntry;
+  installed: boolean;
+  busy: boolean;
+  install: (s: string) => void;
+}) {
   return (
-    <section className="dpm-root" aria-busy={page.status === 'loading' || operating}>
+    <li className="dpm-recommend">
+      <div className="dpm-recommend-head">
+        <div>
+          <span className="dpm-category">{e.category}</span>
+          <h5>{e.name}</h5>
+        </div>
+        <span className="dpm-trust" data-status={e.verificationStatus}>
+          {trust(e.verificationStatus)}
+        </span>
+      </div>
+      <p>{e.summary}</p>
+      <div className="dpm-why">
+        <strong>为什么推荐</strong>
+        <span>{e.recommendation}</span>
+      </div>
+      <dl>
+        <div>
+          <dt>版本</dt>
+          <dd>{e.version}</dd>
+        </div>
+        <div>
+          <dt>DSH</dt>
+          <dd>{e.dshCompatibility}</dd>
+        </div>
+        <div>
+          <dt>验证</dt>
+          <dd>{e.verifiedAt ?? "尚未验证"}</dd>
+        </div>
+      </dl>
+      <div className="dpm-recommend-actions">
+        <a href={e.repository} target="_blank" rel="noreferrer">
+          查看源码
+        </a>
+        <button
+          className="dpm-primary"
+          disabled={busy || installed}
+          onClick={() => install(e.installSpec)}
+        >
+          {installed ? "已安装" : "安装"}
+        </button>
+      </div>
+    </li>
+  );
+}
+export function PluginManagerTab(): ReactNode {
+  const [rev, setRev] = useState(0),
+    [page, setPage] = useState<Page>({ status: "loading" }),
+    [target, setTarget] = useState(""),
+    [op, setOp] = useState<Op>({ status: "idle" });
+  useEffect(() => {
+    const c = new AbortController();
+    setPage({ status: "loading" });
+    void load(c.signal).then(
+      (v) => {
+        if (!c.signal.aborted) setPage({ status: "ready", ...v });
+      },
+      () => {
+        if (!c.signal.aborted)
+          setPage({
+            status: "error",
+            message: "无法读取插件目录或 Profile 状态。",
+          });
+      },
+    );
+    return () => c.abort();
+  }, [rev]);
+  const refresh = useCallback(() => setRev((v) => v + 1), []),
+    busy = op.status === "running";
+  const run = useCallback(
+    async (action: PluginAction, raw: string) => {
+      const t = raw.trim();
+      if (!t) {
+        setOp({ status: "error", message: "请输入 DSH 兼容插件地址。" });
+        return;
+      }
+      const label =
+        action === "add"
+          ? "安装 " + t
+          : action === "update"
+            ? "升级 " + t
+            : "卸载 " + t;
+      if (
+        !window.confirm(
+          "确认" +
+            label +
+            "？\n\n将执行标准 dsh plugin 命令并修改 web Profile。",
+        )
+      )
+        return;
+      setOp({ status: "running", label });
+      try {
+        const result = await operation(action, t);
+        setOp({ status: "done", result });
+        if (result.success) {
+          setTarget("");
+          refresh();
+        }
+      } catch (e) {
+        setOp({
+          status: "error",
+          message: e instanceof Error ? e.message : "操作失败",
+        });
+      }
+    },
+    [refresh],
+  );
+  const installed =
+      page.status === "ready"
+        ? new Set(page.inventory.plugins.map((p) => p.name))
+        : new Set<string>(),
+    updates =
+      page.status === "ready"
+        ? new Map(page.updates.updates.map((u) => [u.name, u]))
+        : new Map<string, PluginUpdateInfo>(),
+    plugins =
+      page.status === "ready"
+        ? page.inventory.plugins.filter((p) => !p.manager)
+        : [],
+    manager =
+      page.status === "ready"
+        ? page.inventory.plugins.find((p) => p.manager)
+        : undefined;
+  const summary = useMemo(
+    () =>
+      plugins.reduce((s, p) => ({ ...s, [p.health]: s[p.health] + 1 }), {
+        healthy: 0,
+        warning: 0,
+        error: 0,
+      }),
+    [plugins],
+  );
+  return (
+    <section className="dpm-root" aria-busy={page.status === "loading" || busy}>
       <header className="dpm-heading">
-        <div><h3>插件管家</h3><p>管理当前 DSH Profile 的插件生命周期、结构健康和可用更新。</p></div>
-        <button className="dpm-button" type="button" onClick={refresh} disabled={operating}>刷新</button>
+        <div>
+          <h3>插件推荐</h3>
+          <p>发现经过准入与兼容性标注的 DSH 插件，然后安装、升级和体检。</p>
+        </div>
+        <button onClick={refresh} disabled={busy}>
+          刷新目录
+        </button>
       </header>
-
-      <section className="dpm-panel">
-        <div className="dpm-section-heading"><div><h4>安装插件</h4><p>支持 npm 包、GitHub 仓库地址和本地 .tgz 绝对路径。</p></div></div>
-        <div className="dpm-install-row">
-          <input aria-label="插件安装目标" value={installTarget} disabled={operating} onChange={event => setInstallTarget(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !operating) void runOperation('add', installTarget) }} placeholder="例如 @scope/plugin、https://github.com/owner/repo 或 D:\plugins\plugin.tgz" />
-          <button className="dpm-primary" type="button" disabled={operating || !installTarget.trim()} onClick={() => void runOperation('add', installTarget)}>安装</button>
-        </div>
-      </section>
-
-      {operation.status === 'running' ? <section className="dpm-operation" data-status="running"><strong>正在{operation.label}</strong><span>完成后会自动刷新清单。</span></section> : null}
-      {operation.status === 'error' ? <section className="dpm-operation" data-status="error" role="alert"><strong>操作未完成</strong><span>{operation.message}</span></section> : null}
-      {operation.status === 'done' ? (
-        <section className="dpm-operation" data-status={operation.result.success ? 'success' : 'error'}>
-          <strong>{operation.result.success ? 'Profile 已更新' : `命令失败（退出码 ${operation.result.exitCode}）`}</strong>
-          <code>{operation.result.command}</code>
-          {operation.result.output ? <pre>{operation.result.output}</pre> : null}
-          {operation.result.restartRequired ? <p>请停止当前 DSH Web，再运行 <code>dsh web</code> 加载新插件代码。</p> : null}
+      {page.status === "loading" ? (
+        <p className="dpm-state">正在加载推荐目录…</p>
+      ) : null}
+      {page.status === "error" ? (
+        <p className="dpm-error">{page.message}</p>
+      ) : null}
+      {page.status === "ready" ? (
+        <>
+          <section className="dpm-panel">
+            <div className="dpm-section-heading">
+              <div>
+                <h4>推荐插件</h4>
+                <p>
+                  {page.catalog.message} · 来源：
+                  {page.catalog.source === "remote"
+                    ? "远程目录"
+                    : page.catalog.source === "cache"
+                      ? "本地缓存"
+                      : "内置目录"}
+                  {page.catalog.stale ? "（已过期）" : ""}
+                </p>
+              </div>
+            </div>
+            {page.catalog.entries.length ? (
+              <ul className="dpm-recommend-grid">
+                {page.catalog.entries.map((e) => (
+                  <Recommended
+                    key={e.id}
+                    e={e}
+                    installed={installed.has(e.packageName)}
+                    busy={busy}
+                    install={(s) => void run("add", s)}
+                  />
+                ))}
+              </ul>
+            ) : (
+              <div className="dpm-empty">
+                <strong>首批推荐插件正在验证</strong>
+                <p>
+                  目录不会用普通 npm 包凑数。完成标准 CLI 安装、DSH
+                  启动和结构体检后才会出现在这里。
+                </p>
+              </div>
+            )}
+          </section>
+          <section className="dpm-panel">
+            <div className="dpm-section-heading">
+              <div>
+                <h4>已安装插件</h4>
+                <p>Profile：{page.inventory.profileName}</p>
+              </div>
+              <div className="dpm-health-summary">
+                <span data-health="healthy">正常 {summary.healthy}</span>
+                <span data-health="warning">提醒 {summary.warning}</span>
+                <span data-health="error">异常 {summary.error}</span>
+              </div>
+            </div>
+            {plugins.length ? (
+              <ul className="dpm-plugin-list">
+                {plugins.map((p) => (
+                  <Installed
+                    key={p.name}
+                    p={p}
+                    u={updates.get(p.name)}
+                    busy={busy}
+                    run={(a, t) => void run(a, t)}
+                  />
+                ))}
+              </ul>
+            ) : (
+              <div className="dpm-empty">
+                <strong>还没有业务插件</strong>
+                <p>从上方推荐中心安装插件后，会在这里进行升级、卸载和体检。</p>
+              </div>
+            )}
+          </section>
+          <details className="dpm-advanced">
+            <summary>高级安装</summary>
+            <p>
+              仅安装你信任的 DSH 兼容插件。支持 npm 固定版本、GitHub 仓库或本地
+              .tgz。
+            </p>
+            <div className="dpm-install-row">
+              <input
+                aria-label="DSH 兼容插件安装地址"
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+                placeholder="例如 @scope/plugin@1.2.3 或 D:\plugins\plugin.tgz"
+              />
+              <button
+                className="dpm-primary"
+                disabled={busy || !target.trim()}
+                onClick={() => void run("add", target)}
+              >
+                安装
+              </button>
+            </div>
+          </details>
+          {manager ? (
+            <details className="dpm-about">
+              <summary>关于插件管家</summary>
+              <p>
+                {manager.name} v{manager.version} ·{" "}
+                {manager.health === "healthy" ? "运行正常" : "需要检查"}
+              </p>
+            </details>
+          ) : null}
+          <details className="dpm-diagnostics">
+            <summary>
+              <span>运行环境自检</span>
+              <span>
+                通过 {page.report.summary.pass} · 提醒{" "}
+                {page.report.summary.warning} · 失败 {page.report.summary.fail}
+              </span>
+            </summary>
+            <ul className="dpm-check-list">
+              {page.report.checks.map((i) => (
+                <li className="dpm-check" key={i.id}>
+                  <span className="dpm-label">{i.label}</span>
+                  <span className="dpm-message">{i.message}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        </>
+      ) : null}
+      {op.status === "running" ? (
+        <section className="dpm-operation" data-status="running">
+          正在{op.label}
         </section>
       ) : null}
-
-      <section className="dpm-panel">
-        <div className="dpm-section-heading">
-          <div><h4>已安装插件</h4><p>{page.status === 'ready' ? `Profile：${page.inventory.profileName} · 版本数据来自 npm Registry` : '正在读取当前 Profile'}</p></div>
-          {page.status === 'ready' ? <div className="dpm-health-summary"><span data-health="healthy">正常 {healthSummary.healthy}</span><span data-health="warning">提醒 {healthSummary.warning}</span><span data-health="error">异常 {healthSummary.error}</span></div> : null}
-        </div>
-        {page.status === 'loading' ? <p className="dpm-state">正在读取插件清单…</p> : null}
-        {page.status === 'error' ? <p className="dpm-state dpm-error" role="alert">{page.message}</p> : null}
-        {page.status === 'ready' ? <ul className="dpm-plugin-list">{page.inventory.plugins.map(plugin => <PluginCard key={plugin.name} plugin={plugin} update={updateMap.get(plugin.name)} disabled={operating} onAction={(action, target) => { void runOperation(action, target) }} />)}</ul> : null}
-      </section>
-
-      {page.status === 'ready' ? (
-        <section className="dpm-panel">
-          <div className="dpm-section-heading"><div><h4>可信来源目录</h4><p>只展示内置核验或由当前 Profile 管理员明确配置的来源。</p></div></div>
-          <ul className="dpm-catalog-list">
-            {page.catalog.entries.map(entry => (
-              <li className="dpm-catalog-item" key={entry.name}>
-                <div><strong>{entry.name}</strong><span className="dpm-kind">{entry.trust === 'builtin' ? '内置核验' : 'Profile 配置'}</span><p>{entry.description}</p><a href={entry.repository} target="_blank" rel="noreferrer">查看源码</a></div>
-                <button type="button" disabled={operating || installed.has(entry.name)} onClick={() => void runOperation('add', entry.installSpec)}>{installed.has(entry.name) ? '已安装' : '安装'}</button>
-              </li>
-            ))}
-          </ul>
+      {op.status === "error" ? (
+        <section className="dpm-operation" data-status="error">
+          {op.message}
         </section>
       ) : null}
-
-      {page.status === 'ready' ? (
-        <details className="dpm-diagnostics"><summary><span>运行环境自检</span><span className="dpm-summary-inline">通过 {page.report.summary.pass} · 提醒 {page.report.summary.warning} · 失败 {page.report.summary.fail}</span></summary>
-          <ul className="dpm-check-list">{page.report.checks.map(item => <li className="dpm-check" key={item.id} data-status={item.status}><span className="dpm-dot" data-status={item.status} aria-hidden="true" /><span className="dpm-label">{item.label}</span><span className="dpm-message">{item.message}</span></li>)}</ul>
-        </details>
+      {op.status === "done" ? (
+        <section
+          className="dpm-operation"
+          data-status={op.result.success ? "success" : "error"}
+        >
+          <strong>{op.result.success ? "Profile 已更新" : "命令失败"}</strong>
+          <code>{op.result.command}</code>
+          {op.result.restartRequired ? (
+            <p>
+              请重启 <code>dsh web</code> 加载变更。
+            </p>
+          ) : null}
+        </section>
       ) : null}
     </section>
-  )
+  );
 }
-
-export const name = 'dsh-plugin-manager-client'
-export const inject = ['slots']
-
-export function apply(ctx: DshClientContext): void {
+export const name = "dsh-plugin-manager-client",
+  inject = ["slots"];
+export function apply(ctx: Context): void {
   ctx.effect(() => {
-    const style = document.createElement('style')
-    style.dataset.plugin = 'dsh-plugin-manager'
-    style.textContent = CLIENT_STYLES
-    document.head.append(style)
-    return () => style.remove()
-  }, 'dsh-plugin-manager: styles')
-  ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({ name: 'settings.plugins.tab', id: 'manager', order: 20, label: '插件管家' }, PluginManagerTab))
+    const s = document.createElement("style");
+    s.dataset.plugin = "dsh-plugin-manager";
+    s.textContent = CLIENT_STYLES;
+    document.head.append(s);
+    return () => s.remove();
+  }, "dsh-plugin-manager: styles");
+  ctx.slots.inject("settings.plugins.tab", () =>
+    ctx.slots.register(
+      {
+        name: "settings.plugins.tab",
+        id: "manager",
+        order: 20,
+        label: "插件推荐",
+      },
+      PluginManagerTab,
+    ),
+  );
 }
-
-export default { name, inject, apply }
+export default { name, inject, apply };

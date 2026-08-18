@@ -74,4 +74,19 @@ export const CLIENT_STYLES = `
   .dpm-message { grid-column: 2; }
   .dpm-diagnostics summary { flex-direction: column; }
 }
-`
+
+
+.dpm-recommend-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin:0;padding:0;list-style:none}
+.dpm-recommend{padding:16px;border:1px solid color-mix(in srgb,currentColor 14%,transparent);border-radius:14px}
+.dpm-recommend-head,.dpm-recommend-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.dpm-recommend h5{font-size:16px;margin:6px 0}
+.dpm-category,.dpm-trust{font-size:11px;padding:3px 8px;border-radius:999px;background:color-mix(in srgb,currentColor 8%,transparent)}
+.dpm-trust[data-status=verified]{color:#0a8f5b;background:#e7f7ef}
+.dpm-why{display:grid;gap:3px;padding:10px;border-radius:10px;background:color-mix(in srgb,currentColor 5%,transparent);font-size:12px}
+.dpm-recommend dl{display:flex;gap:16px}.dpm-recommend dl div{display:grid}.dpm-recommend dt{font-size:10px;opacity:.55}.dpm-recommend dd{margin:2px 0;font-size:12px}
+.dpm-recommend-actions a{font-size:12px;color:#2563eb}
+.dpm-empty{text-align:center;padding:28px 16px;border:1px dashed color-mix(in srgb,currentColor 18%,transparent);border-radius:12px}
+.dpm-empty p{margin:6px auto 0;max-width:560px;opacity:.65}
+.dpm-advanced,.dpm-about{margin-top:16px;padding:14px 18px;border:1px solid color-mix(in srgb,currentColor 12%,transparent);border-radius:12px}
+.dpm-advanced summary,.dpm-about summary{cursor:pointer;font-weight:650}
+`;

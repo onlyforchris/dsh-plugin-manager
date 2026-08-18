@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"DSH Plugin Registry","type":"object","required":["schemaVersion","updatedAt","entries"],"properties":{"schemaVersion":{"const":1},"updatedAt":{"type":"string","format":"date-time"},"entries":{"type":"array","maxItems":200}},"additionalProperties":false}

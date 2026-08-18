@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+- Make plugin recommendations the primary settings experience.
+- Add a repository-backed registry with strict runtime validation.
+- Fetch the registry server-side with timeout, ETag caching, atomic writes, and builtin fallback.
+- Show catalog source, freshness, compatibility, verification status, permissions, and recommendation rationale.
+- Move manual installation into an advanced section and hide the manager itself from business plugins.
+- Keep the initial catalog empty until real DSH plugins pass the documented admission checks.
 ## 0.3.0
 
 - Add npm Registry latest-version checks with timeout, caching, and per-plugin failure isolation.

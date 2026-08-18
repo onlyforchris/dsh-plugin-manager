@@ -1,74 +1,60 @@
 # DSH Plugin Manager
 
-DSH 原生插件管家。它管理当前 DSH Profile 的第三方插件生命周期，检查插件结构健康，并识别 npm Registry 上可用的新版本。
+DSH 的插件发现与生命周期管理入口。0.4.0 将“推荐插件”放到首屏，在同一页面完成发现、安装、升级、卸载和结构体检。
 
-## 产品定位
+## 使用
 
-- **插件管家**是产品定位：管理插件清单、来源和生命周期。
-- **插件体检**是辅助能力：检查已安装包、Manifest、Bundle 注册、Bundle patch 和 Client 导出。
-- **版本识别**只查询 npm Registry 的 latest 版本；本地包和 Git 源会明确显示无法自动判断。
-- **可信来源目录**只展示内置核验或由 Profile 管理员显式配置的来源，不把搜索结果冒充推荐。
-- 0.3.0 **不提供漏洞扫描**，不把结构检查冒充为 CVE 或供应链安全扫描。
+安装后运行 `dsh web`，进入 **设置 → 插件 → 插件推荐**。
 
-## 使用方式
+页面分为：
 
-安装后运行 `dsh web`，进入 **设置 → 插件 → 插件管家**。
+- 推荐插件：来自受控远程目录，展示用途、兼容范围、验证状态和推荐理由。
+- 已安装插件：展示版本、更新状态和结构健康，可升级或卸载。
+- 高级安装：手动安装可信的 npm 固定版本、GitHub 仓库或本地 .tgz。
+- 关于与环境自检：管家自身和 DSH 运行状态。
 
-插件管家支持：
+## 推荐策略
 
-- 使用 npm 包、GitHub 仓库地址或本地 .tgz 安装插件
-- 升级或卸载当前 Profile 中的第三方插件
-- 显示 Registry 最新版本和可升级状态
-- 查看可信来源、信任依据和代码仓库
-- 查看每个插件的结构健康问题
-- 查看实际执行的标准 DSH 命令、退出码和输出
+推荐不是 npm 搜索结果。条目必须说明维护者、源码、许可证、DSH 兼容范围、验证日期、权限和推荐理由。
 
-所有变更写入 Profile 后都需要重启 DSH Web 才能加载新的插件代码。
+验证状态：
 
-## 标准 CLI 安装
+- `verified`：完成标准 CLI 安装、DSH 启动和结构体检。
+- `community`：来源明确，尚未完成当前版本实机验证。
+- `experimental`：功能或兼容性仍处于实验阶段。
 
-要求 Node.js 22.19 或更高版本。
+“已验证”只代表兼容性验证，不代表漏洞或供应链安全认证。
+
+## 远程目录
+
+目录文件位于 [registry/plugins.json](./registry/plugins.json)，默认从 GitHub Raw 获取。服务端请求超时 4 秒，限制 256 KB 和 200 条记录，并严格校验字段、GitHub 仓库地址和安装目标。
+
+获取顺序：
+
+1. 远程目录
+2. ETag 本地缓存
+3. 安装包内置目录
+
+缓存位于 `~/.dsh/cache/dsh-plugin-manager/registry.json`。远程失败不会影响已安装插件管理。缓存超过 7 天会显示过期状态。目录获取本身不会触发安装；每次安装仍需用户确认，并走标准 `dsh plugin` 命令。
+
+当前目录为空是有意设计：首批候选必须完成实机验证后才能进入推荐列表，不能用普通 npm 包凑数。
+
+## 标准安装
 
 ~~~powershell
 npm ci
 npm test
 npm run pack:release
-dsh plugin --profile web add .\dsh-plugin-manager-0.3.0.tgz
+dsh plugin --profile web add .\dsh-plugin-manager-0.4.0.tgz
 dsh web
 ~~~
 
-## 配置可信来源
+## 产品边界
 
-插件配置可追加由 Profile 管理员负责的来源：
+- 不提供任意 Shell 或命令拼接。
+- 不自动安装远程目录中的插件。
+- 不做个性化推荐或安装行为采集。
+- 不把结构体检称为漏洞扫描。
+- 管家不能从运行页面升级或卸载自身。
 
-~~~yaml
-catalog:
-  - name: example-plugin
-    description: 团队核验的示例插件
-    installSpec: example-plugin
-    repository: https://github.com/example/example-plugin
-~~~
-
-目录不是远程搜索结果；每个条目必须由插件内置或 Profile 管理员显式登记。安装仍经过与手动输入相同的目标校验和标准 `dsh plugin` 命令。
-
-## 安全与网络边界
-
-- 操作 API 只接受 add、update、remove。
-- 安装目标只接受受限格式的 npm 包、GitHub 仓库或本地 .tgz。
-- 不提供任意 Shell、命令拼接或配置文件编辑入口。
-- 修改操作严格串行，并要求同源自定义请求头。
-- 插件管家不能从运行页面升级或卸载自身。
-- 版本检查只向 `https://registry.npmjs.org/<package>/latest` 发起 GET 请求，4 秒超时，成功结果缓存 10 分钟。
-- Registry 失败只影响版本提示，不影响本地清单和结构体检。
-
-## 基础健康检查
-
-每个 Profile 依赖会检查：
-
-- 安装目录中是否存在有效 package.json
-- 是否声明 dsh.bundle.patch
-- Bundle 是否加入当前 Profile
-- Bundle patch 文件是否真实存在且位于插件包内
-- 声明 dsh.client 时是否存在可访问的 ./client 导出
-
-DSH 仍处于 developer preview。当前版本针对 @deepseek-ai/dsh 0.1.0-rc.6 的 Bundle、Client 和 Settings slot 约定构建。
+当前版本针对 @deepseek-ai/dsh 0.1.0-rc.6 构建。
