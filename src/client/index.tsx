@@ -2,7 +2,9 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
 import {
@@ -10,6 +12,7 @@ import {
   DIAGNOSTICS_PATH,
   INVENTORY_PATH,
   OPERATIONS_PATH,
+  RESTART_PATH,
   UPDATES_PATH,
   type DiagnosticReport,
   type ManagedPlugin,
@@ -58,66 +61,143 @@ type Op =
     }
   | { readonly status: "done"; readonly result: PluginOperationResult };
 type GuideNotice =
-  | { readonly status: "success"; readonly message: string }
-  | { readonly status: "error"; readonly message: string }
+  | {
+      readonly status: "success" | "warning" | "error";
+      readonly message: string;
+      readonly actionLabel?: string;
+      readonly actionTarget?: string;
+    }
   | null;
 type CatalogCardState =
   | "available"
   | "installing"
   | "installed"
+  | "unavailable"
   | "pending"
   | "error";
+interface Confirmation {
+  readonly action: PluginAction;
+  readonly target: string;
+  readonly displayName: string;
+  readonly entry?: PluginCatalogEntry;
+  readonly returnFocusKey?: string;
+}
+type RestartState =
+  | { readonly status: "idle" }
+  | { readonly status: "restarting"; readonly action: PluginAction }
+  | { readonly status: "failed"; readonly message: string };
 
-async function get<T>(p: string, s: AbortSignal) {
-  const r = await fetch(p, {
+async function get<T>(path: string, signal: AbortSignal) {
+  const response = await fetch(path, {
     cache: "no-store",
     credentials: "same-origin",
-    signal: s,
+    signal,
   });
-  if (!r.ok) throw Error(String(r.status));
-  return (await r.json()) as T;
+  if (!response.ok) throw Error(String(response.status));
+  return (await response.json()) as T;
 }
-async function load(s: AbortSignal) {
+async function load(signal: AbortSignal) {
   const [report, inventory, updates, catalog] = await Promise.all([
-    get<DiagnosticReport>(DIAGNOSTICS_PATH, s),
-    get<PluginInventory>(INVENTORY_PATH, s),
-    get<PluginUpdatesReport>(UPDATES_PATH, s),
-    get<PluginCatalog>(CATALOG_PATH, s),
+    get<DiagnosticReport>(DIAGNOSTICS_PATH, signal),
+    get<PluginInventory>(INVENTORY_PATH, signal),
+    get<PluginUpdatesReport>(UPDATES_PATH, signal),
+    get<PluginCatalog>(CATALOG_PATH, signal),
   ]);
   return { report, inventory, updates, catalog };
 }
 async function operation(action: PluginAction, target: string) {
-  const r = await fetch(OPERATIONS_PATH, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: {
-        "content-type": "application/json",
-        "x-dsh-plugin-manager": "1",
-      },
-      body: JSON.stringify({ action, target }),
-    }),
-    p = (await r.json()) as PluginOperationResult | { message?: string };
-  if (!r.ok) throw Error("message" in p && p.message ? p.message : "操作失败");
-  return p as PluginOperationResult;
+  const response = await fetch(OPERATIONS_PATH, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "content-type": "application/json",
+      "x-dsh-plugin-manager": "1",
+    },
+    body: JSON.stringify({ action, target }),
+  });
+  const payload = (await response.json()) as
+    | PluginOperationResult
+    | { message?: string };
+  if (!response.ok)
+    throw Error(
+      "message" in payload && payload.message ? payload.message : "操作失败",
+    );
+  return payload as PluginOperationResult;
+}
+async function restartDsh() {
+  const response = await fetch(RESTART_PATH, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "x-dsh-plugin-manager": "1" },
+  });
+  const payload = (await response.json()) as {
+    accepted?: boolean;
+    message?: string;
+  };
+  if (!response.ok || payload.accepted !== true)
+    throw Error(payload.message ?? "无法安排 DSH 自动重启");
+}
+const delay = (milliseconds: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+async function waitForRestart() {
+  let sawOffline = false;
+  const deadline = Date.now() + 45_000;
+  await delay(250);
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(DIAGNOSTICS_PATH, {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      if (response.ok && sawOffline) {
+        window.location.reload();
+        return;
+      }
+    } catch {
+      sawOffline = true;
+    }
+    await delay(250);
+  }
+  throw Error("DSH 重启超时，请检查重启日志后重试");
 }
 async function copyText(value: string) {
   if (!navigator.clipboard) throw Error("clipboard_unavailable");
   await navigator.clipboard.writeText(value);
 }
-function openSettings(label: string) {
-  const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-    (item) => item.textContent?.trim() === label,
+function findControl(label: string) {
+  const normalized = label.trim();
+  return [
+    ...document.querySelectorAll<HTMLElement>(
+      "button, [role='button'], [role='tab']",
+    ),
+  ].find(
+    (item) =>
+      item.textContent?.trim() === normalized ||
+      item.getAttribute("aria-label")?.trim() === normalized,
   );
-  if (!button) return false;
-  button.click();
+}
+function openControl(label: string) {
+  const control = findControl(label);
+  if (!control) return false;
+  control.click();
   return true;
 }
-const trust = (s: PluginCatalogEntry["verificationStatus"]) =>
-  s === "verified" ? "已验证" : s === "community" ? "社区插件" : "实验性";
+function launchTargetAvailable(entry: PluginCatalogEntry) {
+  return entry.launch?.kind !== "settings" || Boolean(findControl(entry.launch.target));
+}
+const trust = (status: PluginCatalogEntry["verificationStatus"]) =>
+  status === "verified"
+    ? "已验证"
+    : status === "community"
+      ? "社区插件"
+      : "实验性";
+const actionVerb = (action: PluginAction) =>
+  action === "add" ? "安装" : action === "update" ? "升级" : "卸载";
 function cardState(
   entry: PluginCatalogEntry,
   installed: boolean,
   op: Op,
+  launchReady = true,
 ): CatalogCardState {
   const matches =
     op.status === "running"
@@ -145,57 +225,221 @@ function cardState(
       !op.result.success)
   )
     return "error";
+  if (installed && !launchReady) return "unavailable";
   return installed ? "installed" : "available";
 }
+
+function ConfirmationDialog({
+  confirmation,
+  profileName,
+  onCancel,
+  onConfirm,
+}: {
+  confirmation: Confirmation;
+  profileName: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const returnFocusKey = confirmation.returnFocusKey;
+    const frame = requestAnimationFrame(() => {
+      dialogRef.current
+        ?.querySelector<HTMLButtonElement>("[data-confirm]")
+        ?.focus();
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      requestAnimationFrame(() => {
+        const target = returnFocusKey
+          ? [...document.querySelectorAll<HTMLElement>("[data-dpm-focus]")].find(
+              (element) => element.dataset.dpmFocus === returnFocusKey,
+            )
+          : previous;
+        target?.focus();
+      });
+    };
+  }, []);
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      onCancel();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const controls = [
+      ...(dialogRef.current?.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), a[href], summary, input:not([disabled])",
+      ) ?? []),
+    ];
+    const first = controls[0];
+    const last = controls.at(-1);
+    if (!first || !last) return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+  const destructive = confirmation.action === "remove";
+  return (
+    <div
+      className="dpm-dialog-layer"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onCancel();
+      }}
+    >
+      <div
+        ref={dialogRef}
+        className="dpm-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dpm-dialog-title"
+        onKeyDown={handleKeyDown}
+      >
+        <div className="dpm-dialog-head">
+          <div>
+            <span className="dpm-dialog-eyebrow">
+              {actionVerb(confirmation.action)}到 Profile · {profileName}
+            </span>
+            <h4 id="dpm-dialog-title">
+              {actionVerb(confirmation.action)} {confirmation.displayName}
+            </h4>
+          </div>
+          <button
+            className="dpm-dialog-close"
+            aria-label="取消并关闭"
+            onClick={onCancel}
+          >
+            ×
+          </button>
+        </div>
+        <p className="dpm-dialog-intro">
+          管家将执行标准 DSH 插件命令。成功后自动安全重启 DSH，页面会自行恢复。
+        </p>
+        {confirmation.entry ? (
+          <div className="dpm-dialog-facts">
+            <span>
+              <small>版本</small>
+              <strong>v{confirmation.entry.version}</strong>
+            </span>
+            <span>
+              <small>可信状态</small>
+              <strong>{trust(confirmation.entry.verificationStatus)}</strong>
+            </span>
+            <span>
+              <small>兼容范围</small>
+              <strong>{confirmation.entry.dshCompatibility}</strong>
+            </span>
+          </div>
+        ) : null}
+        <div className="dpm-command-preview">
+          <span>安装来源</span>
+          <code>{confirmation.target}</code>
+        </div>
+        {confirmation.entry?.permissions.length ? (
+          <details className="dpm-dialog-impact">
+            <summary>
+              安装后可能使用的权限（{confirmation.entry.permissions.length}）
+            </summary>
+            <ul>
+              {confirmation.entry.permissions.map((permission) => (
+                <li key={permission}>{permission}</li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+        {confirmation.entry?.verificationStatus === "experimental" ? (
+          <p className="dpm-dialog-warning">
+            这是实验性插件。建议先确认来源与影响范围，再安装到常用 Profile。
+          </p>
+        ) : null}
+        <div className="dpm-dialog-actions">
+          <button className="dpm-button" onClick={onCancel}>
+            取消
+          </button>
+          <button
+            data-confirm
+            className={destructive ? "dpm-confirm-danger" : "dpm-primary"}
+            onClick={onConfirm}
+          >
+            {destructive
+              ? "确认卸载并重启"
+              : actionVerb(confirmation.action) + "并重启"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RestartOverlay({ action }: { action: PluginAction }) {
+  return (
+    <div className="dpm-restarting-layer" role="status" aria-live="assertive">
+      <div className="dpm-restarting-card">
+        <span className="dpm-spinner" aria-hidden="true" />
+        <div>
+          <strong>{actionVerb(action)}已完成，正在重启 DSH</strong>
+          <p>无需执行命令。服务恢复后本页面会自动刷新。</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Installed({
-  p,
-  u,
+  plugin,
+  update,
   busy,
   run,
 }: {
-  p: ManagedPlugin;
-  u: PluginUpdateInfo | undefined;
+  plugin: ManagedPlugin;
+  update: PluginUpdateInfo | undefined;
   busy: boolean;
-  run: (a: PluginAction, t: string) => void;
+  run: (action: PluginAction, target: string, displayName: string) => void;
 }) {
   return (
-    <li className="dpm-plugin" data-health={p.health}>
+    <li className="dpm-plugin" data-health={plugin.health}>
       <div className="dpm-plugin-main">
-        <span className="dpm-health-dot" data-health={p.health} />
+        <span className="dpm-health-dot" data-health={plugin.health} />
         <div className="dpm-plugin-copy">
           <div className="dpm-plugin-title">
-            <strong>{p.name}</strong>
-            {p.version ? (
-              <span className="dpm-version">v{p.version}</span>
+            <strong>{plugin.name}</strong>
+            {plugin.version ? (
+              <span className="dpm-version">v{plugin.version}</span>
             ) : null}
-            {p.bundle ? <span className="dpm-kind">Bundle</span> : null}
-            {p.client ? <span className="dpm-kind">Client</span> : null}
-            {u?.state === "available" ? (
+            {plugin.bundle ? <span className="dpm-kind">Bundle</span> : null}
+            {plugin.client ? <span className="dpm-kind">Client</span> : null}
+            {update?.state === "available" ? (
               <span className="dpm-update-badge">
-                可升级至 {u.latestVersion}
+                可升级至 {update.latestVersion}
               </span>
             ) : null}
           </div>
-          <code className="dpm-spec">{p.spec}</code>
-          {u ? (
-            <span className="dpm-update-copy" data-state={u.state}>
-              {u.message}
+          <code className="dpm-spec">{plugin.spec}</code>
+          {update ? (
+            <span className="dpm-update-copy" data-state={update.state}>
+              {update.message}
             </span>
           ) : null}
         </div>
-        <span className="dpm-health-label" data-health={p.health}>
-          {p.health === "healthy"
+        <span className="dpm-health-label" data-health={plugin.health}>
+          {plugin.health === "healthy"
             ? "正常"
-            : p.health === "warning"
+            : plugin.health === "warning"
               ? "提醒"
               : "异常"}
         </span>
       </div>
-      {p.issues.length ? (
+      {plugin.issues.length ? (
         <ul className="dpm-issues">
-          {p.issues.map((i) => (
-            <li key={i.code} data-severity={i.severity}>
-              {i.message}
+          {plugin.issues.map((issue) => (
+            <li key={issue.code} data-severity={issue.severity}>
+              {issue.message}
             </li>
           ))}
         </ul>
@@ -204,15 +448,17 @@ function Installed({
       )}
       <div className="dpm-plugin-actions">
         <button
-          disabled={busy || !p.canUpdate}
-          onClick={() => run("update", p.name)}
+          data-dpm-focus={"update-" + plugin.name}
+          disabled={busy || !plugin.canUpdate}
+          onClick={() => run("update", plugin.name, plugin.name)}
         >
           升级
         </button>
         <button
           className="dpm-danger"
-          disabled={busy || !p.canRemove}
-          onClick={() => run("remove", p.name)}
+          data-dpm-focus={"remove-" + plugin.name}
+          disabled={busy || !plugin.canRemove}
+          onClick={() => run("remove", plugin.name, plugin.name)}
         >
           卸载
         </button>
@@ -220,6 +466,7 @@ function Installed({
     </li>
   );
 }
+
 function Recommended({
   entry,
   state,
@@ -230,31 +477,37 @@ function Recommended({
   entry: PluginCatalogEntry;
   state: CatalogCardState;
   busy: boolean;
-  install: (s: string) => void;
-  launch: (e: PluginCatalogEntry) => void;
+  install: (entry: PluginCatalogEntry) => void;
+  launch: (entry: PluginCatalogEntry) => void;
 }) {
   const stateLabel =
       state === "installing"
         ? "安装中"
         : state === "pending"
-          ? "待重启"
+          ? "准备重启"
           : state === "installed"
-            ? "已启用"
-            : state === "error"
-              ? "安装失败"
-              : "未安装",
-    installed = state === "installed",
+            ? entry.launch
+              ? "已启用"
+              : "已安装"
+            : state === "unavailable"
+              ? "入口未加载"
+              : state === "error"
+                ? "安装失败"
+                : "未安装",
+    installed = state === "installed" || state === "unavailable",
     canLaunch = installed && entry.launch !== null,
     primaryLabel =
       state === "installing"
         ? "正在安装…"
         : state === "pending"
-          ? "重启后生效"
-          : installed
-            ? (entry.launch?.label ?? "已安装")
-            : state === "error"
-              ? "重试安装"
-              : "安装";
+          ? "正在完成…"
+          : state === "unavailable"
+            ? "查看处理办法"
+            : installed
+              ? (entry.launch?.label ?? "已安装")
+              : state === "error"
+                ? "重试安装"
+                : "安装并重启";
   return (
     <li className="dpm-recommend" data-state={state}>
       <div className="dpm-recommend-head">
@@ -304,12 +557,16 @@ function Recommended({
         </a>
         <button
           className="dpm-primary"
+          data-dpm-focus={"catalog-" + entry.id}
           data-state={state}
           aria-describedby={"dpm-first-use-" + entry.id}
-          disabled={busy || state === "installing" || state === "pending" || (installed && !canLaunch)}
-          onClick={() =>
-            canLaunch ? launch(entry) : install(entry.installSpec)
+          disabled={
+            busy ||
+            state === "installing" ||
+            state === "pending" ||
+            (installed && !canLaunch)
           }
+          onClick={() => (canLaunch ? launch(entry) : install(entry))}
         >
           {primaryLabel}
         </button>
@@ -317,35 +574,47 @@ function Recommended({
     </li>
   );
 }
+
 export function PluginManagerTab(): ReactNode {
-  const [rev, setRev] = useState(0),
-    [page, setPage] = useState<Page>({ status: "loading" }),
-    [target, setTarget] = useState(""),
-    [op, setOp] = useState<Op>({ status: "idle" }),
-    [guide, setGuide] = useState<GuideNotice>(null);
+  const [revision, setRevision] = useState(0);
+  const [page, setPage] = useState<Page>({ status: "loading" });
+  const [target, setTarget] = useState("");
+  const [op, setOp] = useState<Op>({ status: "idle" });
+  const [guide, setGuide] = useState<GuideNotice>(null);
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const [restart, setRestart] = useState<RestartState>({ status: "idle" });
+
   useEffect(() => {
-    const c = new AbortController();
+    const controller = new AbortController();
     setPage({ status: "loading" });
-    void load(c.signal).then(
-      (v) => {
-        if (!c.signal.aborted) setPage({ status: "ready", ...v });
+    void load(controller.signal).then(
+      (value) => {
+        if (!controller.signal.aborted) setPage({ status: "ready", ...value });
       },
       () => {
-        if (!c.signal.aborted)
+        if (!controller.signal.aborted)
           setPage({
             status: "error",
             message: "无法读取插件目录或 Profile 状态。",
           });
       },
     );
-    return () => c.abort();
-  }, [rev]);
-  const refresh = useCallback(() => setRev((v) => v + 1), []),
-    busy = op.status === "running";
-  const run = useCallback(
-    async (action: PluginAction, raw: string) => {
-      const t = raw.trim();
-      if (!t) {
+    return () => controller.abort();
+  }, [revision]);
+
+  const refresh = useCallback(() => setRevision((value) => value + 1), []);
+  const busy =
+    op.status === "running" || restart.status === "restarting";
+
+  const requestOperation = useCallback(
+    (
+      action: PluginAction,
+      raw: string,
+      displayName?: string,
+      entry?: PluginCatalogEntry,
+    ) => {
+      const value = raw.trim();
+      if (!value) {
         setOp({
           status: "error",
           action,
@@ -354,55 +623,85 @@ export function PluginManagerTab(): ReactNode {
         });
         return;
       }
-      const label =
-        action === "add"
-          ? "安装 " + t
-          : action === "update"
-            ? "升级 " + t
-            : "卸载 " + t;
-      if (
-        !window.confirm(
-          "确认" +
-            label +
-            "？\n\n将执行标准 dsh plugin 命令并修改 web Profile。",
-        )
-      )
-        return;
+      setConfirmation({
+        action,
+        target: value,
+        displayName: displayName ?? value,
+        ...(entry ? { entry } : {}),
+        returnFocusKey: entry
+          ? "catalog-" + entry.id
+          : action === "add"
+            ? "advanced-add"
+            : action + "-" + value,
+      });
+    },
+    [],
+  );
+
+  const execute = useCallback(
+    async (request: Confirmation) => {
+      setConfirmation(null);
       setGuide(null);
-      setOp({ status: "running", action, target: t, label });
+      const label = actionVerb(request.action) + " " + request.displayName;
+      setOp({
+        status: "running",
+        action: request.action,
+        target: request.target,
+        label,
+      });
       try {
-        const result = await operation(action, t);
+        const result = await operation(request.action, request.target);
         setOp({ status: "done", result });
-        if (result.success) {
-          setTarget("");
+        if (!result.success) return;
+        setTarget("");
+        if (!result.restartRequired) {
+          refresh();
+          return;
+        }
+        setRestart({ status: "restarting", action: request.action });
+        try {
+          await restartDsh();
+          await waitForRestart();
+        } catch (error) {
+          setRestart({
+            status: "failed",
+            message:
+              error instanceof Error ? error.message : "DSH 自动重启失败",
+          });
           refresh();
         }
-      } catch (e) {
+      } catch (error) {
         setOp({
           status: "error",
-          action,
-          target: t,
-          message: e instanceof Error ? e.message : "操作失败",
+          action: request.action,
+          target: request.target,
+          message: error instanceof Error ? error.message : "操作失败",
         });
       }
     },
     [refresh],
   );
+
   const launch = useCallback(async (entry: PluginCatalogEntry) => {
     const action = entry.launch;
     if (!action) {
       setGuide({
-        status: "error",
+        status: "warning",
         message: "该插件没有快捷入口，请按“第一次怎么用”操作。",
       });
       return;
     }
     if (action.kind === "settings") {
-      if (!openSettings(action.target))
+      if (!openControl(action.target))
         setGuide({
-          status: "error",
+          status: "warning",
           message:
-            "没有找到“" + action.target + "”入口。请确认已重启 DSH 后再试。",
+            entry.name +
+            "已经安装，但当前 DSH 没有注册“" +
+            action.target +
+            "”入口。它可能尚未兼容当前 DSH 版本，或客户端部分加载失败。",
+          actionLabel: "打开插件列表",
+          actionTarget: "插件列表",
         });
       return;
     }
@@ -419,6 +718,7 @@ export function PluginManagerTab(): ReactNode {
       });
     }
   }, []);
+
   const copyRestart = useCallback(async () => {
     try {
       await copyText("dsh web");
@@ -433,36 +733,48 @@ export function PluginManagerTab(): ReactNode {
       });
     }
   }, []);
+
   const installed =
       page.status === "ready"
-        ? new Set(page.inventory.plugins.map((p) => p.name))
+        ? new Set(page.inventory.plugins.map((plugin) => plugin.name))
         : new Set<string>(),
     updates =
       page.status === "ready"
-        ? new Map(page.updates.updates.map((u) => [u.name, u]))
+        ? new Map(page.updates.updates.map((update) => [update.name, update]))
         : new Map<string, PluginUpdateInfo>(),
     plugins =
       page.status === "ready"
-        ? page.inventory.plugins.filter((p) => !p.manager)
+        ? page.inventory.plugins.filter((plugin) => !plugin.manager)
         : [],
     manager =
       page.status === "ready"
-        ? page.inventory.plugins.find((p) => p.manager)
+        ? page.inventory.plugins.find((plugin) => plugin.manager)
         : undefined;
   const summary = useMemo(
     () =>
       plugins.reduce(
-        (s, p) => ({ ...s, [p.health]: s[p.health] + 1 }),
-        {
-          healthy: 0,
-          warning: 0,
-          error: 0,
-        },
+        (current, plugin) => ({
+          ...current,
+          [plugin.health]: current[plugin.health] + 1,
+        }),
+        { healthy: 0, warning: 0, error: 0 },
       ),
     [plugins],
   );
+
   return (
     <section className="dpm-root" aria-busy={page.status === "loading" || busy}>
+      {confirmation && page.status === "ready" ? (
+        <ConfirmationDialog
+          confirmation={confirmation}
+          profileName={page.inventory.profileName}
+          onCancel={() => setConfirmation(null)}
+          onConfirm={() => void execute(confirmation)}
+        />
+      ) : null}
+      {restart.status === "restarting" ? (
+        <RestartOverlay action={restart.action} />
+      ) : null}
       <header className="dpm-heading">
         <div>
           <h3>插件推荐</h3>
@@ -476,10 +788,27 @@ export function PluginManagerTab(): ReactNode {
         <section
           className="dpm-notice"
           data-status={guide.status}
-          role="status"
+          role={guide.status === "error" ? "alert" : "status"}
           aria-live="polite"
         >
-          {guide.message}
+          <span>{guide.message}</span>
+          {guide.actionLabel && guide.actionTarget ? (
+            <button
+              className="dpm-button"
+              onClick={() => openControl(guide.actionTarget ?? "")}
+            >
+              {guide.actionLabel}
+            </button>
+          ) : null}
+        </section>
+      ) : null}
+      {restart.status === "failed" ? (
+        <section className="dpm-operation" data-status="error" role="alert">
+          <strong>插件已更新，但自动重启没有完成</strong>
+          <span>{restart.message}</span>
+          <button className="dpm-button" onClick={() => void copyRestart()}>
+            复制备用重启命令
+          </button>
         </section>
       ) : null}
       {op.status === "running" ? (
@@ -498,23 +827,15 @@ export function PluginManagerTab(): ReactNode {
           <span>{op.message}</span>
         </section>
       ) : null}
-      {op.status === "done" ? (
+      {op.status === "done" &&
+      (!op.result.success || restart.status === "failed") ? (
         <section
           className="dpm-operation"
           data-status={op.result.success ? "success" : "error"}
           role={op.result.success ? "status" : "alert"}
           aria-live="polite"
         >
-          <strong>{op.result.success ? "Profile 已更新，等待重启" : "命令失败"}</strong>
-          <code>{op.result.command}</code>
-          {op.result.restartRequired ? (
-            <div className="dpm-restart">
-              <span>请在命令行重启 DSH，让插件真正加载。</span>
-              <button className="dpm-button" onClick={() => void copyRestart()}>
-                复制 dsh web
-              </button>
-            </div>
-          ) : null}
+          <strong>{op.result.success ? "Profile 已更新" : "命令失败"}</strong>
           {!op.result.success && op.result.output ? (
             <details>
               <summary>查看命令输出</summary>
@@ -558,9 +879,17 @@ export function PluginManagerTab(): ReactNode {
                       entry,
                       installed.has(entry.packageName),
                       op,
+                      launchTargetAvailable(entry),
                     )}
                     busy={busy}
-                    install={(spec) => void run("add", spec)}
+                    install={(item) =>
+                      requestOperation(
+                        "add",
+                        item.installSpec,
+                        item.name,
+                        item,
+                      )
+                    }
                     launch={(item) => void launch(item)}
                   />
                 ))}
@@ -569,7 +898,7 @@ export function PluginManagerTab(): ReactNode {
               <div className="dpm-empty">
                 <strong>首批推荐插件正在验证</strong>
                 <p>
-                  目录不会用普通 npm 包凑数。完成标准 CLI 安装、DSH
+                  目录不会使用普通 npm 包凑数。完成标准 CLI 安装、DSH
                   启动和结构体检后才会出现在这里。
                 </p>
               </div>
@@ -593,20 +922,24 @@ export function PluginManagerTab(): ReactNode {
             <div className="dpm-installed-body">
               {plugins.length ? (
                 <ul className="dpm-plugin-list">
-                  {plugins.map((p) => (
+                  {plugins.map((plugin) => (
                     <Installed
-                      key={p.name}
-                      p={p}
-                      u={updates.get(p.name)}
+                      key={plugin.name}
+                      plugin={plugin}
+                      update={updates.get(plugin.name)}
                       busy={busy}
-                      run={(a, t) => void run(a, t)}
+                      run={(action, value, displayName) =>
+                        requestOperation(action, value, displayName)
+                      }
                     />
                   ))}
                 </ul>
               ) : (
                 <div className="dpm-empty">
                   <strong>还没有业务插件</strong>
-                  <p>从上方推荐中心安装后，会在这里进行升级、卸载和体检。</p>
+                  <p>
+                    从上方推荐中心安装后，会在这里进行升级、卸载和体检。
+                  </p>
                 </div>
               )}
             </div>
@@ -614,8 +947,8 @@ export function PluginManagerTab(): ReactNode {
           <details className="dpm-advanced">
             <summary>高级安装</summary>
             <p>
-              仅安装你信任的 DSH 兼容插件。支持 npm 固定版本、GitHub 仓库或本地
-              .tgz。
+              仅安装你信任的 DSH 兼容插件。支持 npm 固定版本、GitHub
+              仓库或本地 .tgz。
             </p>
             <div className="dpm-install-row">
               <label htmlFor="dpm-install-target">插件安装地址</label>
@@ -623,15 +956,16 @@ export function PluginManagerTab(): ReactNode {
                 <input
                   id="dpm-install-target"
                   value={target}
-                  onChange={(e) => setTarget(e.target.value)}
+                  onChange={(event) => setTarget(event.target.value)}
                   placeholder="例如 @scope/plugin@1.2.3 或 D:\plugins\plugin.tgz"
                 />
                 <button
                   className="dpm-primary"
+                  data-dpm-focus="advanced-add"
                   disabled={busy || !target.trim()}
-                  onClick={() => void run("add", target)}
+                  onClick={() => requestOperation("add", target)}
                 >
-                  安装
+                  安装并重启
                 </button>
               </div>
             </div>
@@ -654,11 +988,11 @@ export function PluginManagerTab(): ReactNode {
               </span>
             </summary>
             <ul className="dpm-check-list">
-              {page.report.checks.map((i) => (
-                <li className="dpm-check" key={i.id}>
-                  <span className="dpm-dot" data-status={i.status} />
-                  <span className="dpm-label">{i.label}</span>
-                  <span className="dpm-message">{i.message}</span>
+              {page.report.checks.map((check) => (
+                <li className="dpm-check" key={check.id}>
+                  <span className="dpm-dot" data-status={check.status} />
+                  <span className="dpm-label">{check.label}</span>
+                  <span className="dpm-message">{check.message}</span>
                 </li>
               ))}
             </ul>
@@ -668,15 +1002,16 @@ export function PluginManagerTab(): ReactNode {
     </section>
   );
 }
+
 export const name = "dsh-plugin-manager-client",
   inject = ["slots"];
 export function apply(ctx: Context): void {
   ctx.effect(() => {
-    const s = document.createElement("style");
-    s.dataset.plugin = "dsh-plugin-manager";
-    s.textContent = CLIENT_STYLES;
-    document.head.append(s);
-    return () => s.remove();
+    const style = document.createElement("style");
+    style.dataset.plugin = "dsh-plugin-manager";
+    style.textContent = CLIENT_STYLES;
+    document.head.append(style);
+    return () => style.remove();
   }, "dsh-plugin-manager: styles");
   ctx.slots.inject("settings.plugins.tab", () =>
     ctx.slots.register(

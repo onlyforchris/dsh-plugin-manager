@@ -1,8 +1,9 @@
 export const PACKAGE_NAME = "dsh-plugin-manager";
-export const MANAGER_VERSION = "0.5.0";
+export const MANAGER_VERSION = "0.5.4";
 export const DIAGNOSTICS_PATH = "/dsh-plugin-manager/api/diagnostics";
 export const INVENTORY_PATH = "/dsh-plugin-manager/api/plugins";
 export const OPERATIONS_PATH = "/dsh-plugin-manager/api/operations";
+export const RESTART_PATH = "/dsh-plugin-manager/api/restart";
 export const UPDATES_PATH = "/dsh-plugin-manager/api/updates";
 export const CATALOG_PATH = "/dsh-plugin-manager/api/catalog";
 export type DiagnosticStatus = "pass" | "warning" | "fail";

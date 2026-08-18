@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.4
+
+- Replace browser-native confirmations with an accessible in-app install review dialog.
+- Restart DSH automatically after successful plugin mutations and restore the page when the service returns.
+- Preserve the active Web host, port, and other inner command-line arguments across restart.
+- Treat a catalog launch target as available only when the corresponding DSH control is actually registered.
+- Refine status, warning, restart, mobile, focus, and reduced-motion presentation.
+
 ## 0.5.0
 
 - Turn recommendations into a first-use workflow with explicit install lifecycle states.

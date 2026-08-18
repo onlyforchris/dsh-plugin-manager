@@ -28,4 +28,6 @@ export interface DshHostContext {
   readonly logger: {
     warn(error: unknown): void
   }
+  get(name: "appExit"): ((code: number) => void) | undefined
+  get(name: "cmdlineArgs"): { get(): readonly string[] } | undefined
 }

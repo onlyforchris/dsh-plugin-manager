@@ -8,15 +8,18 @@ import {
   createDiagnosticsHandler,
   createInventoryHandler,
   createOperationsHandler,
+  createRestartHandler,
   createUpdatesHandler,
 } from "./http.js";
 import { createPluginInventory, profileRoot } from "./inventory.js";
 import { createDshPluginRunner, PluginOperationService } from "./operations.js";
+import { createRestartHelper, DshRestartService } from "./restart.js";
 import {
   CATALOG_PATH,
   DIAGNOSTICS_PATH,
   INVENTORY_PATH,
   OPERATIONS_PATH,
+  RESTART_PATH,
   UPDATES_PATH,
 } from "./shared.js";
 import {
@@ -24,7 +27,7 @@ import {
   createPluginUpdates,
 } from "./updates.js";
 export const name = "dsh-plugin-manager";
-export const inject = ["webServer", "loader"];
+export const inject = ["webServer", "loader", "appExit", "cmdlineArgs"];
 export interface Config {
   readonly profileName?: string;
   readonly catalogUrl?: string;
@@ -63,9 +66,10 @@ export function apply(ctx: DshHostContext, config: Config = {}): void {
       loaderEntries: [...ctx.loader.entries()],
     }),
   );
+  const dshCliPath = process.argv[1] ?? "";
   const service = new PluginOperationService(
     createDshPluginRunner({
-      dshCliPath: process.argv[1] ?? "",
+      dshCliPath,
       profileName,
       profileRoot: root,
       cwd: process.cwd(),
@@ -73,12 +77,26 @@ export function apply(ctx: DshHostContext, config: Config = {}): void {
     async () => new Set((await inventory()).plugins.map((p) => p.name)),
     profileName,
   );
+  const appArgs = ctx.get("cmdlineArgs")?.get();
+  const restart = new DshRestartService(
+    createRestartHelper({
+      dshCliPath,
+      profileName,
+      cwd: process.cwd(),
+      dshHome,
+      host: ctx.webServer.host,
+      port: ctx.webServer.port,
+      ...(appArgs ? { appArgs } : {}),
+    }),
+    ctx.get("appExit"),
+  );
   for (const [path, handler, label] of [
     [DIAGNOSTICS_PATH, diagnostics, "diagnostics"],
     [INVENTORY_PATH, createInventoryHandler(inventory), "inventory"],
     [UPDATES_PATH, createUpdatesHandler(updates), "updates"],
     [CATALOG_PATH, createCatalogHandler(catalog), "catalog"],
     [OPERATIONS_PATH, createOperationsHandler(service), "operations"],
+    [RESTART_PATH, createRestartHandler(restart), "restart"],
   ] as const)
     ctx.effect(
       () => ctx.webServer.register({ kind: "exact", path, handler }),

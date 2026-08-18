@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { PluginOperationError, type PluginOperationService } from './operations.js'
+import { RestartError, type DshRestartService } from './restart.js'
 import type {
   DiagnosticReport,
   PluginCatalog,
@@ -100,6 +101,37 @@ export function createCatalogHandler(
       sendJson(res, 200, await getCatalog())
     } catch {
       sendJson(res, 500, { error: 'catalog_failed' })
+    }
+  }
+}
+export function createRestartHandler(
+  service: DshRestartService,
+): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+  return async (req, res) => {
+    if (req.method !== "POST") {
+      sendJson(res, 405, { error: "method_not_allowed" }, { allow: "POST" })
+      return
+    }
+    if (req.headers["x-dsh-plugin-manager"] !== "1") {
+      sendJson(res, 403, { error: "request_guard_required" })
+      return
+    }
+    try {
+      sendJson(res, 202, await service.schedule())
+    } catch (error) {
+      if (error instanceof RestartError) {
+        sendJson(res, error.code === "busy" ? 409 : 503, {
+          error: error.code,
+          message: error.code === "busy"
+            ? "DSH 已在准备重启"
+            : "当前 DSH 启动器不支持自动重启",
+        })
+        return
+      }
+      sendJson(res, 500, {
+        error: "restart_failed",
+        message: "无法启动 DSH 重启助手",
+      })
     }
   }
 }
