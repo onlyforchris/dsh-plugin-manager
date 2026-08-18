@@ -1,5 +1,163 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-08-18T08:00:00.000Z",
-  "entries": []
+  "updatedAt": "2026-08-18T09:00:00.000Z",
+  "entries": [
+    {
+      "id": "vision-toolkit",
+      "name": "视觉工具",
+      "packageName": "@anionex/dsh-vision-toolkit",
+      "summary": "让 DSH 看懂图片：截图/设计图还原为网页 UI、长截图 OCR、元素定位、取色、裁剪与像素对比。首次使用会自动安装本地 Python 视觉环境。",
+      "category": "tools",
+      "repository": "https://github.com/Anionex/dsh-vision-toolkit",
+      "installSpec": "@anionex/dsh-vision-toolkit@0.1.31",
+      "version": "0.1.31",
+      "dshCompatibility": "0.1.0-rc.6+",
+      "verificationStatus": "verified",
+      "verifiedWithDsh": "0.1.0-rc.6",
+      "verifiedAt": "2026-08-18",
+      "maintainer": "Anionex",
+      "license": "MIT",
+      "recommendation": "安装后 DSH 就具备视觉能力：把设计稿还原成网页代码、长聊天记录 OCR、按描述定位界面元素。截图类任务的第一选择。",
+      "permissions": [
+        "下载并运行本地 Python 视觉模型环境（首次使用自动安装，缓存在 ~/.dsh/cache）",
+        "读取你发送给会话的图片附件",
+        "在回复中注入视觉工具按钮与渲染结果"
+      ],
+      "firstUse": [
+        "向任意会话发送一张截图或设计图",
+        "查看回复中的视觉工具卡片（描述 / OCR / UI 还原）",
+        "点击「还原为 UI」生成网页代码，或使用元素定位、取色",
+        "打开设置 → 视觉工具，调整默认模型与行为"
+      ],
+      "launch": {
+        "kind": "settings",
+        "label": "打开视觉工具设置",
+        "target": "视觉工具"
+      }
+    },
+    {
+      "id": "dsh-at-file",
+      "name": "文件提及（@文件）",
+      "packageName": "dsh-at-file",
+      "summary": "在输入框用 @ 直接引用工作区文件，agent 自动读取内容，无需手动粘贴路径或全文。",
+      "category": "tools",
+      "repository": "https://github.com/omdsh-dev/dsh-at-file",
+      "installSpec": "github:omdsh-dev/dsh-at-file#v0.6.3",
+      "version": "v0.6.3",
+      "dshCompatibility": "0.1.0-rc.6+",
+      "verificationStatus": "verified",
+      "verifiedWithDsh": "0.1.0-rc.6",
+      "verifiedAt": "2026-08-18",
+      "maintainer": "omdsh-dev",
+      "license": "见仓库 LICENSE",
+      "recommendation": "引用文件最顺手的插件：输入 @ 选文件，agent 直接拿到内容；比手动贴路径可靠，长文档分析场景很实用。",
+      "permissions": [
+        "读取你工作区内的文件",
+        "在输入框渲染 @ 文件选择面板",
+        "把被引用文件的内容注入对话上下文"
+      ],
+      "firstUse": [
+        "在输入框输入 @",
+        "从列表选择要引用的文件",
+        "发送消息，让 agent 读取并处理该文件"
+      ],
+      "launch": {
+        "kind": "copy-prompt",
+        "label": "复制试用提示",
+        "target": "用 @ 引用工作区里的一个文件，然后让 agent 总结它的内容。"
+      }
+    },
+    {
+      "id": "dsh-find-plugin",
+      "name": "插件搜索（对话式）",
+      "packageName": "dsh-find-plugin",
+      "summary": "直接对 agent 说需求，自动在 GitHub 的 DSH 插件生态中按 star 搜索，返回带安装命令的结果。",
+      "category": "tools",
+      "repository": "https://github.com/awesome-dsh-plugin/dsh-find-plugin",
+      "installSpec": "dsh-find-plugin@0.3.6",
+      "version": "0.3.6",
+      "dshCompatibility": "0.1.0-rc.6+",
+      "verificationStatus": "verified",
+      "verifiedWithDsh": "0.1.0-rc.6",
+      "verifiedAt": "2026-08-18",
+      "maintainer": "awesome-dsh-plugin",
+      "license": "MIT",
+      "recommendation": "想知道「有没有能做 XX 的插件」时直接问它。搜索结果不等于本目录准入，安装前仍建议对照本页验证状态。",
+      "permissions": [
+        "访问 GitHub 搜索 API（匿名，结果缓存 5 分钟）",
+        "把搜索结果与安装命令返回给会话"
+      ],
+      "firstUse": [
+        "对 agent 说「帮我找一个能在 DSH 里做 XX 的插件」",
+        "查看按 star 排序的搜索结果与安装命令",
+        "可让 agent 直接执行安装命令"
+      ],
+      "launch": {
+        "kind": "copy-prompt",
+        "label": "复制搜索示例",
+        "target": "帮我找一个能在 DSH 里做 XX 的插件"
+      }
+    },
+    {
+      "id": "dsh-genui",
+      "name": "GenUI 交互界面",
+      "packageName": "@omdsh-dev/dsh-genui",
+      "summary": "让 agent 在回复中渲染可交互 UI：表格、卡片、图表、问卷、试卷判分等，交互状态本地完成并随会话持久化。",
+      "category": "ui",
+      "repository": "https://github.com/omdsh-dev/dsh-genui",
+      "installSpec": "github:omdsh-dev/dsh-genui#dab48fae600edb97859591ff6a25feb363d10721",
+      "version": "dab48fae",
+      "dshCompatibility": "0.1.0-rc.6+",
+      "verificationStatus": "experimental",
+      "verifiedWithDsh": "0.1.0-rc.6",
+      "verifiedAt": "2026-08-18",
+      "maintainer": "omdsh-dev",
+      "license": "见仓库 LICENSE",
+      "recommendation": "结构化展示利器：要点对比、流程、数据看板都能渲染成可交互组件，还支持本地判分与试卷模式。实验性收录：依赖声明范围与安装结果不一致，待作者修正。",
+      "permissions": [
+        "在回复中注入交互式 UI 组件",
+        "接收你在 UI 上的交互状态并回传模型"
+      ],
+      "firstUse": [
+        "对 agent 说「把这份内容用表格和卡片展示」",
+        "查看回复中的可交互 UI",
+        "点击按钮、选项与 UI 交互，无需刷新页面"
+      ],
+      "launch": {
+        "kind": "copy-prompt",
+        "label": "复制展示示例",
+        "target": "把这份内容用表格和卡片展示出来"
+      }
+    },
+    {
+      "id": "dsh-web-ui-all",
+      "name": "Web UI 全家桶",
+      "packageName": "@linxin666/dsh-web-ui-all",
+      "summary": "一键聚合 DSH Web UI 插件族：任务看板、Git 图、宠物、皮肤中心、社区插件索引、远程 Web UI 与右侧工作台。",
+      "category": "ui",
+      "repository": "https://github.com/zhu1090093659/dsh-web-ui",
+      "installSpec": "@linxin666/dsh-web-ui-all@0.1.20",
+      "version": "0.1.20",
+      "dshCompatibility": "0.1.0-rc.6+",
+      "verificationStatus": "experimental",
+      "verifiedWithDsh": "0.1.0-rc.6",
+      "verifiedAt": "2026-08-18",
+      "maintainer": "linxin666",
+      "license": "Apache-2.0",
+      "recommendation": "想要更丰富的 Web 界面（看板、皮肤、侧边栏工作台）时一键装全家桶最省事。实验性收录：部分原生依赖构建脚本在验证时未执行，装完如遇报错请查阅其仓库 FAQ。",
+      "permissions": [
+        "注入侧边栏、面板等 Web UI 组件",
+        "读写本地布局与偏好（localStorage）",
+        "含 Git 历史查看（读取仓库 .git 数据）",
+        "皮肤与图标资产随包内置"
+      ],
+      "firstUse": [
+        "安装后硬刷新浏览器（Ctrl+Shift+R）",
+        "右侧出现工作台侧边栏（文件 / 终端 / Git / 浏览器）",
+        "打开设置，查看 Web UI 插件、皮肤中心与社区插件入口",
+        "在皮肤中心切换皮肤试试效果"
+      ],
+      "launch": null
+    }
+  ]
 }

@@ -11,6 +11,9 @@ import type {
 } from "./shared.js";
 export const DEFAULT_CATALOG_URL =
   "https://raw.githubusercontent.com/onlyforchris/dsh-plugin-manager/main/registry/plugins.json";
+/** jsDelivr CDN 镜像：raw.githubusercontent.com 在部分地区不可达时回退，内容与主源一致。 */
+export const MIRROR_CATALOG_URL =
+  "https://cdn.jsdelivr.net/gh/onlyforchris/dsh-plugin-manager@main/registry/plugins.json";
 const MAX_BYTES = 262144,
   MAX_ENTRIES = 200,
   CACHE_MAX_AGE = 604800000;
@@ -131,6 +134,8 @@ function out(
 export function createCatalogProvider(input: {
   readonly dshHome: string;
   readonly remoteUrl?: string;
+  /** CDN 镜像地址；传 null 可禁用镜像回退。默认使用 jsDelivr 镜像。 */
+  readonly mirrorUrl?: string | null;
   readonly timeoutMs?: number;
   readonly fetcher?: typeof fetch;
   readonly builtinPath?: string;
@@ -138,65 +143,85 @@ export function createCatalogProvider(input: {
   const url = input.remoteUrl ?? DEFAULT_CATALOG_URL,
     fetcher = input.fetcher ?? fetch,
     dir = join(input.dshHome, "cache", "dsh-plugin-manager"),
-    path = join(dir, "registry.json");
+    path = join(dir, "registry.json"),
+    mirror =
+      input.mirrorUrl !== null && input.mirrorUrl !== undefined
+        ? input.mirrorUrl
+        : input.mirrorUrl === null
+          ? null
+          : MIRROR_CATALOG_URL;
+  const sources = [
+    { url, useEtag: true },
+    ...(mirror && mirror !== url
+      ? [{ url: mirror, useEtag: false }]
+      : []),
+  ];
   let running: Promise<PluginCatalog> | null = null;
   return async () => {
     if (running) return running;
     running = (async () => {
       const base = await builtin(input.builtinPath),
-        saved = await cache(path),
-        controller = new AbortController(),
-        timer = setTimeout(() => controller.abort(), input.timeoutMs ?? 4000);
-      try {
-        const headers: Record<string, string> = {
-          accept: "application/json",
-          "user-agent": "dsh-plugin-manager",
-        };
-        if (saved?.etag) headers["if-none-match"] = saved.etag;
-        const r = await fetcher(url, { headers, signal: controller.signal });
-        if (r.status === 304 && saved)
-          return out(saved.document, "cache", {
-            sourceUrl: url,
-            fetchedAt: saved.fetchedAt,
-            message: "远程目录未变化，已使用本地缓存",
-          });
-        if (!r.ok) throw Error("catalog_http");
-        const text = await r.text();
-        if (text.length > MAX_BYTES) throw Error("catalog_too_large");
-        const document = parseRegistryDocument(JSON.parse(text)),
-          record: CacheRecord = {
-            schemaVersion: 1,
-            etag: r.headers.get("etag"),
-            fetchedAt: new Date().toISOString(),
-            document,
+        saved = await cache(path);
+      for (const source of sources) {
+        const controller = new AbortController(),
+          timer = setTimeout(() => controller.abort(), input.timeoutMs ?? 4000);
+        try {
+          const headers: Record<string, string> = {
+            accept: "application/json",
+            "user-agent": "dsh-plugin-manager",
           };
-        await mkdir(dir, { recursive: true });
-        await writeFile(path + ".tmp", JSON.stringify(record, null, 2), "utf8");
-        await rename(path + ".tmp", path);
-        return out(document, "remote", {
-          sourceUrl: url,
-          fetchedAt: record.fetchedAt,
-          message: "已加载远程推荐目录",
-        });
-      } catch {
-        if (saved) {
-          const stale =
-            Date.now() - Date.parse(saved.fetchedAt) > CACHE_MAX_AGE;
-          return out(saved.document, "cache", {
-            sourceUrl: url,
-            fetchedAt: saved.fetchedAt,
-            stale,
-            message: stale
-              ? "远程目录不可用，当前缓存已超过 7 天"
-              : "远程目录不可用，已使用本地缓存",
+          if (saved?.etag && source.useEtag)
+            headers["if-none-match"] = saved.etag;
+          const r = await fetcher(source.url, {
+            headers,
+            signal: controller.signal,
           });
+          if (r.status === 304 && saved && source.useEtag)
+            return out(saved.document, "cache", {
+              sourceUrl: source.url,
+              fetchedAt: saved.fetchedAt,
+              message: "远程目录未变化，已使用本地缓存",
+            });
+          if (!r.ok) throw Error("catalog_http");
+          const text = await r.text();
+          if (text.length > MAX_BYTES) throw Error("catalog_too_large");
+          const document = parseRegistryDocument(JSON.parse(text)),
+            record: CacheRecord = {
+              schemaVersion: 1,
+              etag: r.headers.get("etag"),
+              fetchedAt: new Date().toISOString(),
+              document,
+            };
+          await mkdir(dir, { recursive: true });
+          await writeFile(path + ".tmp", JSON.stringify(record, null, 2), "utf8");
+          await rename(path + ".tmp", path);
+          return out(document, "remote", {
+            sourceUrl: source.url,
+            fetchedAt: record.fetchedAt,
+            message: source.useEtag
+              ? "已加载远程推荐目录"
+              : "已加载镜像推荐目录",
+          });
+        } catch {
+          // 当前源不可用，尝试下一个源（镜像 → 缓存 → 内置）
+        } finally {
+          clearTimeout(timer);
         }
-        return out(base, "builtin", {
-          message: "远程目录不可用，已使用安装包内置目录",
-        });
-      } finally {
-        clearTimeout(timer);
       }
+      if (saved) {
+        const stale = Date.now() - Date.parse(saved.fetchedAt) > CACHE_MAX_AGE;
+        return out(saved.document, "cache", {
+          sourceUrl: url,
+          fetchedAt: saved.fetchedAt,
+          stale,
+          message: stale
+            ? "远程目录不可用，当前缓存已超过 7 天"
+            : "远程目录不可用，已使用本地缓存",
+        });
+      }
+      return out(base, "builtin", {
+        message: "远程目录不可用，已使用安装包内置目录",
+      });
     })();
     try {
       return await running;

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.0
+
+- 首批 5 个实机验证通过的插件正式上架推荐目录（registry/plugins.json）：3 个 `verified`（vision-toolkit、dsh-at-file、dsh-find-plugin）、2 个 `experimental`（dsh-genui、dsh-web-ui-all），全部带首次使用步骤、权限说明与快捷入口；验证记录见 registry/reviews。
+- 推荐目录增加 jsDelivr CDN 镜像回退：`raw.githubusercontent.com` 不可达时自动改从 CDN 拉取，避免「远程目录不可用」时只能看到旧缓存；自定义 `catalogUrl` 时镜像自动禁用。
+- `registry/README.md` 固化为准入要求 + 验证 SOP + 收录表；新增 `scripts/validate-registry.mjs` 与 GitHub Actions 校验，目录变更自动检查结构。
+- 内置目录随包携带（`files` 已含 `registry/`），远程与缓存均不可用时仍可展示已收录条目。
+
 ## 0.6.3
 
 - Fix plugin operations failing with HTTP 500 on Windows: run pnpm through `node <pnpm.cjs>` instead of spawning the `pnpm` name or `.cmd` shim directly, which Node cannot resolve or execute without a shell.

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -36,8 +36,11 @@ describe("recommendation catalog", () => {
     const published = JSON.parse(
       await readFile(new URL("../registry/plugins.json", import.meta.url), "utf8"),
     );
-    // 目录有意保持为空：推荐条目只应在完成实机验证后由维护者发布
-    expect(parseRegistryDocument(published).entries).toHaveLength(0);
+    // 目录只收完成实机验证的条目（3 verified + 2 experimental），所有条目必须通过运行时解析
+    const parsed = parseRegistryDocument(published);
+    expect(parsed.entries.length).toBeGreaterThan(0);
+    for (const entry of parsed.entries)
+      expect(entry.firstUse.length).toBeGreaterThan(0);
   });
   it("validates entries and rejects unsafe install sources", () => {
     expect(parseRegistryDocument(document).entries[0]?.id).toBe("demo-plugin");
@@ -84,6 +87,62 @@ describe("recommendation catalog", () => {
       expect(fetcher.mock.calls[1]?.[1]?.headers).toMatchObject({
         "if-none-match": "v1",
       });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+  it("falls back to the mirror when the primary source fails", async () => {
+    const home = await mkdtemp(join(tmpdir(), "dpm-catalog-")),
+      builtin = join(home, "builtin.json");
+    await writeFile(builtin, JSON.stringify({ ...document, entries: [] }));
+    const fetcher = vi.fn().mockImplementation((u: string) => {
+      if (u.includes("raw.githubusercontent.com"))
+        return Promise.reject(Error("network unreachable"));
+      return Promise.resolve(
+        new Response(JSON.stringify(document), { status: 200 }),
+      );
+    });
+    try {
+      const get = createCatalogProvider({
+        dshHome: home,
+        builtinPath: builtin,
+        fetcher,
+      });
+      const result = await get();
+      expect(result.source).toBe("remote");
+      expect(result.message).toContain("镜像");
+      expect(result.entries).toHaveLength(1);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+  it("uses cached entries when both primary and mirror are unreachable", async () => {
+    const home = await mkdtemp(join(tmpdir(), "dpm-catalog-")),
+      builtin = join(home, "builtin.json");
+    await writeFile(builtin, JSON.stringify({ ...document, entries: [] }));
+    const cacheDir = join(home, "cache", "dsh-plugin-manager");
+    await mkdir(cacheDir, { recursive: true });
+    await writeFile(
+      join(cacheDir, "registry.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        etag: "v1",
+        fetchedAt: new Date().toISOString(),
+        document,
+      }),
+      "utf8",
+    );
+    try {
+      const get = createCatalogProvider({
+        dshHome: home,
+        builtinPath: builtin,
+        fetcher: async () => {
+          throw Error("offline");
+        },
+      });
+      const result = await get();
+      expect(result.source).toBe("cache");
+      expect(result.entries).toHaveLength(1);
     } finally {
       await rm(home, { recursive: true, force: true });
     }

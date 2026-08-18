@@ -32,17 +32,21 @@ DSH 的插件发现与生命周期管理入口。0.6.1 将“推荐插件”放�
 
 ## 远程目录
 
-目录文件位于 [registry/plugins.json](./registry/plugins.json)，默认从 GitHub Raw 获取。服务端请求超时 4 秒，限制 256 KB 和 200 条记录，并严格校验字段、GitHub 仓库地址和安装目标。
+目录文件位于 [registry/plugins.json](./registry/plugins.json)，默认从 GitHub Raw 获取，**GitHub Raw 不可达时自动回退 jsDelivr CDN 镜像**（内容一致，国内网络通常可达）。服务端请求超时 4 秒，限制 256 KB 和 200 条记录，并严格校验字段、GitHub 仓库地址和安装目标。
 
 获取顺序：
 
-1. 远程目录
+1. 远程目录（GitHub Raw → jsDelivr 镜像）
 2. ETag 本地缓存
 3. 安装包内置目录
 
 缓存位于 `~/.dsh/cache/dsh-plugin-manager/registry.json`。远程失败不会影响已安装插件管理。缓存超过 7 天会显示过期状态。目录获取本身不会触发安装；每次安装仍需用户确认，并走标准 `dsh plugin` 命令。
 
-当前目录为空是有意设计：首批候选必须完成实机验证后才能进入推荐列表，不能用普通 npm 包凑数。
+> 发布目录：改动 `registry/plugins.json` 后推送到 GitHub main 分支即可；jsDelivr 缓存约几分钟内同步（可用 `https://purge.jsdelivr.net/gh/onlyforchris/dsh-plugin-manager@main/registry/plugins.json` 强制刷新）。
+
+首批候选（2026-08-18 验证）已完成实机验证并收录，见 [registry/plugins.json](./registry/plugins.json)：3 个 `verified`（vision-toolkit、dsh-at-file、dsh-find-plugin）、2 个 `experimental`（dsh-genui、dsh-web-ui-all）。验证记录见 [registry/reviews](./registry/reviews)。目录仍不接受未经验证的条目，也不会用普通 npm 包凑数。
+
+> 复验待办：首批验证于 DSH 0.1.0-rc.6 完成；rc.7 发布后需按 [registry/README.md](./registry/README.md) 的 SOP 复跑，通过后更新 `verifiedWithDsh`。
 
 ## 标准安装
 
@@ -50,7 +54,7 @@ DSH 的插件发现与生命周期管理入口。0.6.1 将“推荐插件”放�
 npm ci
 npm test
 npm run pack:release
-dsh plugin --profile web add .\dsh-plugin-manager-0.6.2.tgz
+dsh plugin --profile web add .\dsh-plugin-manager-0.7.0.tgz
 dsh web
 ~~~
 

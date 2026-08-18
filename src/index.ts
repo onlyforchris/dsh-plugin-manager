@@ -37,9 +37,12 @@ function profile(v: unknown) {
 }
 function catalogUrl(v: unknown) {
   return typeof v === "string" &&
-    /^https:\/\/raw\.githubusercontent\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+\/[a-z0-9._/-]+\.json$/i.test(
+    (/^https:\/\/raw\.githubusercontent\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+\/[a-z0-9._/-]+\.json$/i.test(
       v,
-    )
+    ) ||
+      /^https:\/\/cdn\.jsdelivr\.net\/gh\/[a-z0-9_.-]+\/[a-z0-9_.-]+@[a-z0-9._/-]+\/[a-z0-9._/-]+\.json$/i.test(
+        v,
+      ))
     ? v
     : undefined;
 }
@@ -53,7 +56,11 @@ export function apply(ctx: DshHostContext, config: Config = {}): void {
       createPluginUpdates((await inventory()).plugins, latest);
   const customCatalogUrl = catalogUrl(config.catalogUrl),
     catalog = customCatalogUrl
-      ? createCatalogProvider({ dshHome, remoteUrl: customCatalogUrl })
+      ? createCatalogProvider({
+          dshHome,
+          remoteUrl: customCatalogUrl,
+          mirrorUrl: null,
+        })
       : createCatalogProvider({ dshHome });
   const diagnostics = createDiagnosticsHandler(async () =>
     createDiagnosticReport({
