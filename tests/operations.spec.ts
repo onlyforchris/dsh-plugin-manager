@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   anchorPathSpec,
@@ -52,13 +52,14 @@ describe('plugin operation service', () => {
     })
   })
 
-  it('builds pnpm args with --latest for updates', () => {
+  it('builds pnpm args with --latest for updates', async () => {
+    const dir = await tempProfile()
     // 精确版本声明的插件在裸 pnpm update 下不会升级，必须带 --latest
-    expect(buildPnpmArgs('update', 'demo-plugin', 'C:\\workspace'))
+    expect(buildPnpmArgs('update', 'demo-plugin', dir))
       .toEqual(['update', '--latest', 'demo-plugin'])
-    expect(buildPnpmArgs('add', './a.tgz', 'C:\\workspace'))
-      .toEqual(['add', 'C:\\workspace\\a.tgz'])
-    expect(buildPnpmArgs('remove', 'demo-plugin', 'C:\\workspace'))
+    expect(buildPnpmArgs('add', './a.tgz', dir))
+      .toEqual(['add', join(dir, 'a.tgz')])
+    expect(buildPnpmArgs('remove', 'demo-plugin', dir))
       .toEqual(['remove', 'demo-plugin'])
   })
 
@@ -156,14 +157,15 @@ describe('plugin operation service', () => {
     expect(hint).toContain(process.cwd())
   })
 
-  it('anchors relative install specs to the invoking directory', () => {
-    const cwd = 'C:\\workspace\\demo'
-    expect(anchorPathSpec('.', cwd)).toBe('C:\\workspace\\demo')
-    expect(anchorPathSpec('../plugin', cwd)).toBe('C:\\workspace\\plugin')
-    expect(anchorPathSpec('file:./a.tgz', cwd)).toBe('file:C:\\workspace\\demo\\a.tgz')
-    expect(anchorPathSpec('D:\\plugins\\demo.tgz', cwd)).toBe('D:\\plugins\\demo.tgz')
-    expect(anchorPathSpec('github:owner/repo#main', cwd)).toBe('github:owner/repo#main')
-    expect(anchorPathSpec('@scope/plugin@1.2.3', cwd)).toBe('@scope/plugin@1.2.3')
+  it('anchors relative install specs to the invoking directory', async () => {
+    const dir = await tempProfile()
+    expect(anchorPathSpec('.', dir)).toBe(dir)
+    expect(anchorPathSpec('../plugin', dir)).toBe(join(dirname(dir), 'plugin'))
+    expect(anchorPathSpec('file:./a.tgz', dir)).toBe(`file:${join(dir, 'a.tgz')}`)
+    // 非相对规格（Windows 绝对路径、GitHub、npm）原样透传，不做路径解析
+    expect(anchorPathSpec('D:\\plugins\\demo.tgz', dir)).toBe('D:\\plugins\\demo.tgz')
+    expect(anchorPathSpec('github:owner/repo#main', dir)).toBe('github:owner/repo#main')
+    expect(anchorPathSpec('@scope/plugin@1.2.3', dir)).toBe('@scope/plugin@1.2.3')
   })
 
   it('reconciles profile bundles against the installed state', async () => {
