@@ -50,26 +50,26 @@ describe("client plugin registration", () => {
     ).toBeNull();
   });
 
-  it("replaces the gear glyph of the manager nav item with the brand icon", () => {
+  it("marks the manager nav item for brand icon styling without touching React DOM", () => {
     document.body.innerHTML = `
       <nav>
         <button><svg data-testid="gear"></svg><span>通用设置</span></button>
         <button><svg data-testid="gear"></svg><span>插件管家</span></button>
       </nav>`;
     installManagerNavIcon(document);
-    const managerButton = [...document.querySelectorAll("nav button")].find(
+    const managerButton = [...document.querySelectorAll<HTMLElement>("nav button")].find(
       (b) => b.querySelector("span")?.textContent?.trim() === "插件管家",
     );
-    // 齿轮已被品牌盾牌图标替换，且只替换一次
-    expect(managerButton?.querySelector("svg")?.getAttribute("data-testid")).toBeNull();
-    expect(managerButton?.querySelectorAll("svg").length).toBe(1);
-    expect(managerButton?.querySelector("svg")?.querySelector("path")).not.toBeNull();
+    // 只加 data 标记：svg 保留在 DOM（由 CSS 隐藏），不增删节点
+    expect(managerButton?.dataset.dpmBrandIcon).toBe("1");
+    expect(managerButton?.querySelector("svg")).not.toBeNull();
+    // 幂等：重复调用不重复标记
     installManagerNavIcon(document);
-    expect(managerButton?.querySelectorAll("svg").length).toBe(1);
-    // 其他 section 的图标不受影响
-    const generalButton = [...document.querySelectorAll("nav button")].find(
+    expect(managerButton?.dataset.dpmBrandIcon).toBe("1");
+    // 其他 section 不受影响
+    const generalButton = [...document.querySelectorAll<HTMLElement>("nav button")].find(
       (b) => b.querySelector("span")?.textContent?.trim() === "通用设置",
     );
-    expect(generalButton?.querySelector("svg")?.getAttribute("data-testid")).toBe("gear");
+    expect(generalButton?.dataset.dpmBrandIcon).toBeUndefined();
   });
 });

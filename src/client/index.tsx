@@ -520,108 +520,20 @@ function OperationProgressCard({
   );
 }
 
-/** 插件管家品牌图标：盾牌（守护插件）+ 对勾（验证管理）。单色线性，与 DSH 图标风格一致。 */
-function ManagerIcon({ size }: { size: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M8 1.2 13.8 3.3v4.1c0 3.5-2.3 6.1-5.8 7.2-3.5-1.1-5.8-3.7-5.8-7.2V3.3L8 1.2Z" />
-      <path d="M5.6 8.1 7.2 9.7l3.1-3.5" />
-    </svg>
-  );
-}
-
 /**
- * 把设置左侧导航里「插件管家」项的齿轮图标替换为品牌图标。
- * DSH shell 按 section id 硬编码导航图标，未知 id 一律回退齿轮
- * （第三方 section 均如此），此处以运行时修补对齐品牌设定。
+ * 标记设置左侧导航里「插件管家」项，由 CSS 隐藏齿轮并显示品牌图标。
+ * DSH shell 按 section id 硬编码导航图标（未知 id 一律回退齿轮）。
+ * 注意：绝不能直接替换/增删 React 管理的 DOM 节点（会导致 React 更新时
+ * 卸载整棵设置树）——这里只 setAttribute 一个 data 标记，渲染全部交给 CSS。
  */
 export function installManagerNavIcon(doc: Document) {
   const button = [...doc.querySelectorAll<HTMLButtonElement>("nav button")].find(
     (item) =>
       item.querySelector("span")?.textContent?.trim() === "插件管家" &&
-      item.dataset.dpmIcon !== "manager",
+      item.dataset.dpmBrandIcon !== "1",
   );
-  const svg = button?.querySelector("svg");
-  if (!button || !svg) return;
-  svg.outerHTML =
-    '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.2 13.8 3.3v4.1c0 3.5-2.3 6.1-5.8 7.2-3.5-1.1-5.8-3.7-5.8-7.2V3.3L8 1.2Z"/><path d="M5.6 8.1 7.2 9.7l3.1-3.5"/></svg>';
-  button.dataset.dpmIcon = "manager";
-}
-
-/** 顶部概览卡：一眼看清管家的价值（验证/实验性/可升级/结构健康/环境自检）。 */
-function ManagerHero({
-  verified,
-  experimental,
-  upgradable,
-  summary,
-  profileName,
-  sourceLabel,
-  managerVersion,
-  diag,
-}: {
-  verified: number;
-  experimental: number;
-  upgradable: number;
-  summary: { healthy: number; warning: number; error: number };
-  profileName: string;
-  sourceLabel: string;
-  managerVersion: string | null;
-  diag: { pass: number; warning: number; fail: number } | null;
-}) {
-  const total = diag ? diag.pass + diag.warning + diag.fail : 0;
-  const stats = [
-    { label: "已验证", value: verified, tone: "good" },
-    { label: "实验性", value: experimental, tone: "warn" },
-    { label: "可升级", value: upgradable, tone: "accent" },
-    ...(summary.error > 0
-      ? [{ label: "结构异常", value: summary.error, tone: "danger" }]
-      : summary.warning > 0
-        ? [{ label: "结构提醒", value: summary.warning, tone: "warn" }]
-        : [{ label: "结构正常", value: summary.healthy, tone: "good" }]),
-    ...(diag
-      ? [
-          {
-            label: "环境自检",
-            value: `${diag.pass}/${total}`,
-            tone: diag.fail > 0 ? ("danger" as const) : diag.warning > 0 ? ("warn" as const) : ("good" as const),
-          },
-        ]
-      : []),
-  ];
-  return (
-    <section className="dpm-hero">
-      <div className="dpm-hero-brand">
-        <span className="dpm-hero-icon" aria-hidden="true">
-          <ManagerIcon size={24} />
-        </span>
-        <div>
-          <strong>插件管家</strong>
-          <span>
-            Profile {profileName} · 目录来源：{sourceLabel}
-            {managerVersion ? ` · 管家 v${managerVersion}` : ""}
-          </span>
-        </div>
-      </div>
-      <dl className="dpm-hero-stats">
-        {stats.map((stat) => (
-          <div key={stat.label} className="dpm-hero-stat" data-tone={stat.tone}>
-            <dt>{stat.label}</dt>
-            <dd>{stat.value}</dd>
-          </div>
-        ))}
-      </dl>
-    </section>
-  );
+  if (!button) return;
+  button.dataset.dpmBrandIcon = "1";
 }
 
 function RestartPromptCard({
@@ -1110,34 +1022,6 @@ export function PluginManagerTab(): ReactNode {
     [plugins],
   );
 
-  const heroStats = useMemo(() => {
-    const entries =
-      page.status === "ready" ? page.catalog.entries : [];
-    const verified = entries.filter(
-      (entry) => entry.verificationStatus === "verified",
-    ).length;
-    const experimental = entries.filter(
-      (entry) => entry.verificationStatus === "experimental",
-    ).length;
-    const upgradable = [...updates.values()].filter(
-      (update) => update.state === "available",
-    ).length;
-    const sourceLabel =
-      page.status === "ready"
-        ? page.catalog.source === "remote"
-          ? "远程目录"
-          : page.catalog.source === "cache"
-            ? "本地缓存"
-            : "内置目录"
-        : "…";
-    return {
-      verified,
-      experimental,
-      upgradable,
-      sourceLabel,
-    };
-  }, [page, updates]);
-
   return (
     <section className="dpm-root" aria-busy={page.status === "loading" || busy}>
       {confirmation && page.status === "ready" ? (
@@ -1160,18 +1044,6 @@ export function PluginManagerTab(): ReactNode {
           {busy && op.status === "running" ? "操作中…" : "刷新目录"}
         </button>
       </header>
-      {page.status === "ready" ? (
-        <ManagerHero
-          verified={heroStats.verified}
-          experimental={heroStats.experimental}
-          upgradable={heroStats.upgradable}
-          summary={summary}
-          profileName={page.inventory.profileName}
-          sourceLabel={heroStats.sourceLabel}
-          managerVersion={manager?.version ?? null}
-          diag={page.report.summary}
-        />
-      ) : null}
       {guide ? (
         <section
           className="dpm-notice"

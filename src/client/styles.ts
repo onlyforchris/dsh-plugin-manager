@@ -216,20 +216,10 @@ export const CLIENT_STYLES = `
 .dpm-restart-prompt{display:grid;gap:10px;width:min(460px,100%);border:1px solid color-mix(in srgb,#20a66a 42%,transparent);border-radius:18px;padding:22px;background:Canvas;color:CanvasText;box-shadow:0 24px 80px rgba(0,0,0,.28)}.dpm-restart-prompt strong{font-size:15px}.dpm-restart-prompt>span{color:var(--dpm-muted);opacity:1;font-size:13px;line-height:1.6}.dpm-restart-prompt-actions{display:flex;gap:10px;flex-wrap:wrap}.dpm-restart-prompt-actions .dpm-button{min-height:38px;flex:1;min-width:120px}
 
 /* ===== 独立菜单页视觉（0.9.0，克制原生风：无装饰色条、无渐变） ===== */
-.dpm-hero{display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;padding:17px 19px;border:1px solid var(--dpm-border);border-radius:16px;background:var(--dpm-raised)}
-.dpm-hero-brand{display:flex;align-items:center;gap:13px;min-width:0}
-.dpm-hero-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:14px;background:color-mix(in srgb,CanvasText 3%,Canvas);font-size:24px;line-height:1}
-.dpm-hero-brand>div{display:grid;gap:3px;min-width:0}
-.dpm-hero-brand strong{font-size:17px;letter-spacing:-.01em}
-.dpm-hero-brand span{color:var(--dpm-muted);opacity:1;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.dpm-hero-stats{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
-.dpm-hero-stat{display:grid;gap:1px;min-width:62px;padding:7px 13px;border:1px solid var(--dpm-border);border-radius:11px;background:color-mix(in srgb,CanvasText 2.5%,Canvas);text-align:center}
-.dpm-hero-stat dt{color:var(--dpm-muted);opacity:1;font-size:11px;font-weight:500}
-.dpm-hero-stat dd{margin:0;font-size:18px;font-weight:750;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
-.dpm-hero-stat[data-tone=good] dd{color:#20a66a}
-.dpm-hero-stat[data-tone=warn] dd{color:#c78318}
-.dpm-hero-stat[data-tone=accent] dd{color:var(--dpm-accent)}
-.dpm-hero-stat[data-tone=danger] dd{color:var(--dpm-danger)}
+/* 左侧导航「插件管家」品牌图标：隐藏 shell 齿轮，用伪元素绘制盾牌+对勾
+   （mask 方式跟随主题色；只标记 data 属性，不触碰 React 管理的 DOM） */
+nav button[data-dpm-brand-icon="1"] svg{display:none}
+nav button[data-dpm-brand-icon="1"]::before{content:"";width:16px;height:16px;flex:none;align-self:center;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.2 13.8 3.3v4.1c0 3.5-2.3 6.1-5.8 7.2-3.5-1.1-5.8-3.7-5.8-7.2V3.3L8 1.2Z' fill='black'/%3E%3Cpath d='M5.6 8.1 7.2 9.7l3.1-3.5' stroke='black' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.2 13.8 3.3v4.1c0 3.5-2.3 6.1-5.8 7.2-3.5-1.1-5.8-3.7-5.8-7.2V3.3L8 1.2Z' fill='black'/%3E%3Cpath d='M5.6 8.1 7.2 9.7l3.1-3.5' stroke='black' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat}
 .dpm-trust[data-status=verified]{color:#1e9a5f;background:color-mix(in srgb,#20a66a 11%,Canvas)}
 .dpm-trust[data-status=experimental]{color:#b8750d;background:color-mix(in srgb,#c78318 10%,Canvas)}
 .dpm-trust[data-status=community]{color:#2563eb;background:color-mix(in srgb,#2563eb 9%,Canvas)}
@@ -250,7 +240,6 @@ export const CLIENT_STYLES = `
 .dpm-primary:hover:not(:disabled){filter:brightness(1.06)}
 .dpm-category{text-transform:uppercase;letter-spacing:.05em;font-size:10.5px}
 .dpm-progress-bar{background:var(--dpm-accent)}
-@media(max-width:720px){.dpm-hero{flex-direction:column;align-items:stretch}.dpm-hero-stats{justify-content:flex-start}.dpm-hero-stat{flex:1}}
 @media(max-width:900px){.dpm-recommend{grid-template-columns:1fr}.dpm-why,.dpm-first-use{grid-column:1}}
 @media(max-width:720px){.dpm-heading .dpm-button{width:100%}.dpm-plugin{grid-template-columns:1fr}.dpm-healthy-copy,.dpm-issues{margin-left:0}.dpm-plugin-actions{justify-content:stretch}.dpm-plugin-actions button{flex:1}.dpm-notice,.dpm-operation{grid-template-columns:34px minmax(0,1fr)}.dpm-notice>.dpm-button,.dpm-operation>.dpm-button,.dpm-restart-fallback{grid-column:1/-1;grid-row:auto;width:100%}.dpm-restart-fallback{flex-direction:column}.dpm-restart-fallback .dpm-button{width:100%}}
 `;
