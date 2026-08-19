@@ -558,7 +558,7 @@ export function installManagerNavIcon(doc: Document) {
   button.dataset.dpmIcon = "manager";
 }
 
-/** 顶部概览卡：一眼看清管家的价值（验证/实验性/可升级/结构健康）。 */
+/** 顶部概览卡：一眼看清管家的价值（验证/实验性/可升级/结构健康/环境自检）。 */
 function ManagerHero({
   verified,
   experimental,
@@ -566,6 +566,8 @@ function ManagerHero({
   summary,
   profileName,
   sourceLabel,
+  managerVersion,
+  diag,
 }: {
   verified: number;
   experimental: number;
@@ -573,7 +575,10 @@ function ManagerHero({
   summary: { healthy: number; warning: number; error: number };
   profileName: string;
   sourceLabel: string;
+  managerVersion: string | null;
+  diag: { pass: number; warning: number; fail: number } | null;
 }) {
+  const total = diag ? diag.pass + diag.warning + diag.fail : 0;
   const stats = [
     { label: "已验证", value: verified, tone: "good" },
     { label: "实验性", value: experimental, tone: "warn" },
@@ -583,6 +588,15 @@ function ManagerHero({
       : summary.warning > 0
         ? [{ label: "结构提醒", value: summary.warning, tone: "warn" }]
         : [{ label: "结构正常", value: summary.healthy, tone: "good" }]),
+    ...(diag
+      ? [
+          {
+            label: "环境自检",
+            value: `${diag.pass}/${total}`,
+            tone: diag.fail > 0 ? ("danger" as const) : diag.warning > 0 ? ("warn" as const) : ("good" as const),
+          },
+        ]
+      : []),
   ];
   return (
     <section className="dpm-hero">
@@ -594,6 +608,7 @@ function ManagerHero({
           <strong>插件管家</strong>
           <span>
             Profile {profileName} · 目录来源：{sourceLabel}
+            {managerVersion ? ` · 管家 v${managerVersion}` : ""}
           </span>
         </div>
       </div>
@@ -1151,6 +1166,8 @@ export function PluginManagerTab(): ReactNode {
           summary={summary}
           profileName={page.inventory.profileName}
           sourceLabel={heroStats.sourceLabel}
+          managerVersion={manager?.version ?? null}
+          diag={page.report.summary}
         />
       ) : null}
       {guide ? (
@@ -1345,10 +1362,10 @@ export function PluginManagerTab(): ReactNode {
             </div>
           </details>
           <details className="dpm-advanced">
-            <summary>高级安装</summary>
+            <summary>手动安装（高级）</summary>
             <p>
-              仅安装你信任的 DSH 兼容插件。支持 npm 固定版本、GitHub
-              仓库或本地 .tgz。
+              安装不在推荐目录中的插件：npm 固定版本、GitHub 仓库或本地
+              .tgz。仅安装你信任的 DSH 兼容插件。
             </p>
             <div className="dpm-install-row">
               <label htmlFor="dpm-install-target">插件安装地址</label>
@@ -1369,33 +1386,6 @@ export function PluginManagerTab(): ReactNode {
                 </button>
               </div>
             </div>
-          </details>
-          {manager ? (
-            <details className="dpm-about">
-              <summary>关于插件管家</summary>
-              <p>
-                {manager.name} v{manager.version} ·{" "}
-                {manager.health === "healthy" ? "运行正常" : "需要检查"}
-              </p>
-            </details>
-          ) : null}
-          <details className="dpm-diagnostics">
-            <summary>
-              <span>运行环境自检</span>
-              <span>
-                通过 {page.report.summary.pass} · 提醒{" "}
-                {page.report.summary.warning} · 失败 {page.report.summary.fail}
-              </span>
-            </summary>
-            <ul className="dpm-check-list">
-              {page.report.checks.map((check) => (
-                <li className="dpm-check" key={check.id}>
-                  <span className="dpm-dot" data-status={check.status} />
-                  <span className="dpm-label">{check.label}</span>
-                  <span className="dpm-message">{check.message}</span>
-                </li>
-              ))}
-            </ul>
           </details>
         </>
       ) : null}
