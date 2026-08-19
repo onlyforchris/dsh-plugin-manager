@@ -18,12 +18,12 @@ describe("waitForRestart", () => {
     expect(reload).toHaveBeenCalledOnce();
   });
 
-  it("recovers at the deadline when the app is back but the offline transition was missed", async () => {
+  it("recovers quickly when the app is back but the offline transition was missed", async () => {
     vi.useFakeTimers();
     const reload = vi.fn();
     const probe = vi.fn(async () => true);
     const promise = waitForRestart(probe, reload);
-    await vi.advanceTimersByTimeAsync(70_000);
+    await vi.advanceTimersByTimeAsync(12_000);
     await expect(promise).resolves.toBeUndefined();
     expect(reload).toHaveBeenCalledOnce();
   });

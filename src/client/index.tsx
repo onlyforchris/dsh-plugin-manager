@@ -177,6 +177,7 @@ export async function waitForRestart(
   let sawOffline = false;
   let consecutiveReady = 0;
   const deadline = Date.now() + 60_000;
+  const start = Date.now();
   await delay(250);
   while (Date.now() < deadline) {
     if (await probe()) {
@@ -187,6 +188,12 @@ export async function waitForRestart(
           reload();
           return;
         }
+      } else if (Date.now() - start >= 10_000) {
+        // 从未观察到离线：重启要么极快（探测窗口被跳过）、要么未发生。
+        // 此时服务在线，不再空等 60 秒兜底，直接刷新以反映操作结果；
+        // 若服务确实未重启，页面会显示明确状态而非无限转圈。
+        reload();
+        return;
       }
     } else {
       sawOffline = true;
