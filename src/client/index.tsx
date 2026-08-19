@@ -265,9 +265,9 @@ function launchTargetAvailable(entry: PluginCatalogEntry) {
 }
 const trust = (status: PluginCatalogEntry["verificationStatus"]) =>
   status === "verified"
-    ? "已验证"
+    ? "✓ 已验证"
     : status === "community"
-      ? "社区插件"
+      ? "社区收录"
       : "实验性";
 const actionVerb = (action: PluginAction) =>
   action === "add" ? "安装" : action === "update" ? "升级" : "卸载";
@@ -516,6 +516,57 @@ function OperationProgressCard({
       {logLines.length ? (
         <pre className="dpm-progress-log">{logLines.join("\n")}</pre>
       ) : null}
+    </section>
+  );
+}
+
+/** 顶部概览卡：一眼看清管家的价值（验证/实验性/可升级/结构健康）。 */
+function ManagerHero({
+  verified,
+  experimental,
+  upgradable,
+  summary,
+  profileName,
+  sourceLabel,
+}: {
+  verified: number;
+  experimental: number;
+  upgradable: number;
+  summary: { healthy: number; warning: number; error: number };
+  profileName: string;
+  sourceLabel: string;
+}) {
+  const stats = [
+    { label: "已验证", value: verified, tone: "good" },
+    { label: "实验性", value: experimental, tone: "warn" },
+    { label: "可升级", value: upgradable, tone: "accent" },
+    ...(summary.error > 0
+      ? [{ label: "结构异常", value: summary.error, tone: "danger" }]
+      : summary.warning > 0
+        ? [{ label: "结构提醒", value: summary.warning, tone: "warn" }]
+        : [{ label: "结构正常", value: summary.healthy, tone: "good" }]),
+  ];
+  return (
+    <section className="dpm-hero">
+      <div className="dpm-hero-brand">
+        <span className="dpm-hero-icon" aria-hidden="true">
+          🧩
+        </span>
+        <div>
+          <strong>插件管家</strong>
+          <span>
+            Profile {profileName} · 目录来源：{sourceLabel}
+          </span>
+        </div>
+      </div>
+      <dl className="dpm-hero-stats">
+        {stats.map((stat) => (
+          <div key={stat.label} className="dpm-hero-stat" data-tone={stat.tone}>
+            <dt>{stat.label}</dt>
+            <dd>{stat.value}</dd>
+          </div>
+        ))}
+      </dl>
     </section>
   );
 }
@@ -1004,6 +1055,34 @@ export function PluginManagerTab(): ReactNode {
     [plugins],
   );
 
+  const heroStats = useMemo(() => {
+    const entries =
+      page.status === "ready" ? page.catalog.entries : [];
+    const verified = entries.filter(
+      (entry) => entry.verificationStatus === "verified",
+    ).length;
+    const experimental = entries.filter(
+      (entry) => entry.verificationStatus === "experimental",
+    ).length;
+    const upgradable = [...updates.values()].filter(
+      (update) => update.state === "available",
+    ).length;
+    const sourceLabel =
+      page.status === "ready"
+        ? page.catalog.source === "remote"
+          ? "远程目录"
+          : page.catalog.source === "cache"
+            ? "本地缓存"
+            : "内置目录"
+        : "…";
+    return {
+      verified,
+      experimental,
+      upgradable,
+      sourceLabel,
+    };
+  }, [page, updates]);
+
   return (
     <section className="dpm-root" aria-busy={page.status === "loading" || busy}>
       {confirmation && page.status === "ready" ? (
@@ -1019,13 +1098,23 @@ export function PluginManagerTab(): ReactNode {
       ) : null}
       <header className="dpm-heading">
         <div>
-          <h3>插件推荐</h3>
+          <h3>插件管家</h3>
           <p>从发现到第一次成功使用，再管理升级、卸载和结构健康。</p>
         </div>
         <button className="dpm-button" onClick={refresh} disabled={busy}>
-          刷新目录
+          {busy && op.status === "running" ? "操作中…" : "刷新目录"}
         </button>
       </header>
+      {page.status === "ready" ? (
+        <ManagerHero
+          verified={heroStats.verified}
+          experimental={heroStats.experimental}
+          upgradable={heroStats.upgradable}
+          summary={summary}
+          profileName={page.inventory.profileName}
+          sourceLabel={heroStats.sourceLabel}
+        />
+      ) : null}
       {guide ? (
         <section
           className="dpm-notice"
@@ -1286,13 +1375,14 @@ export function apply(ctx: Context): void {
     document.head.append(style);
     return () => style.remove();
   }, "dsh-plugin-manager: styles");
-  ctx.slots.inject("settings.plugins.tab", () =>
+  ctx.slots.inject("settings.section", () =>
     ctx.slots.register(
       {
-        name: "settings.plugins.tab",
+        name: "settings.section",
         id: "manager",
-        order: 20,
-        label: "插件推荐",
+        order: 26,
+        label: () => "插件管家",
+        inject: () => ({}),
       },
       PluginManagerTab,
     ),

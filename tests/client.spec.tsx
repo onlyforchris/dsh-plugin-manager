@@ -4,8 +4,17 @@ import { describe, expect, it, vi } from "vitest";
 import { apply, PluginManagerTab } from "../src/client/index.js";
 
 describe("client plugin registration", () => {
-  it("registers the native plugin manager tab and owned styles", () => {
-    const register = vi.fn(() => () => undefined);
+  it("registers the plugin manager as a first-level settings section", () => {
+    const register = vi.fn(
+      (
+        _options: {
+          name?: string;
+          id?: string;
+          label?: () => string;
+        },
+        _component: unknown,
+      ) => () => undefined,
+    );
     const inject = vi.fn((_name: string, provider: () => unknown) =>
       provider(),
     );
@@ -23,17 +32,17 @@ describe("client plugin registration", () => {
       document.head.querySelector('style[data-plugin="dsh-plugin-manager"]'),
     ).not.toBeNull();
     expect(inject).toHaveBeenCalledWith(
-      "settings.plugins.tab",
+      "settings.section",
       expect.any(Function),
     );
-    expect(register).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "settings.plugins.tab",
-        id: "manager",
-        label: "插件推荐",
-      }),
-      PluginManagerTab,
-    );
+    const registration = register.mock.calls[0]?.[0];
+    expect(registration).toMatchObject({
+      name: "settings.section",
+      id: "manager",
+    });
+    // label 是本地化函数（生态惯例），调用后返回菜单名
+    expect(typeof registration?.label).toBe("function");
+    expect(registration?.label?.()).toBe("插件管家");
 
     if (typeof dispose === "function") dispose();
     expect(

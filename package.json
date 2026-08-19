@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-manager",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "DSH 插件管家：验证过的插件推荐 + 页内安装/升级/卸载与结构体检。Native DSH plugin discovery, first-use & lifecycle manager.",
   "type": "module",
   "main": "./lib/index.js",
