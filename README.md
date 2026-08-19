@@ -48,15 +48,38 @@ DSH 的插件发现与生命周期管理入口。0.6.1 将“推荐插件”放�
 
 > 复验待办：首批验证于 DSH 0.1.0-rc.6 完成；rc.7 发布后需按 [registry/README.md](./registry/README.md) 的 SOP 复跑，通过后更新 `verifiedWithDsh`。
 
-## 标准安装
+## 安装（给使用者）
+
+从 GitHub 固定 tag 安装（推荐，构建产物已入库，无需本地构建）：
+
+~~~powershell
+dsh plugin --profile web add github:onlyforchris/dsh-plugin-manager#v0.8.0
+dsh web
+~~~
+
+或从 [GitHub Releases](https://github.com/onlyforchris/dsh-plugin-manager/releases) 下载 `dsh-plugin-manager-<版本>.tgz` 后：
+
+~~~powershell
+dsh plugin --profile web add .\dsh-plugin-manager-0.8.0.tgz
+dsh web
+~~~
+
+> npm 上的 `dsh-plugin-manager` 名称已被同名项目占用，本插件暂以 GitHub 源与 Release 附件分发；如需标准 npm 安装可发布为 scoped 包（如 `@onlyforchris/dsh-plugin-manager`）。
+
+## 开发与发版
 
 ~~~powershell
 npm ci
 npm test
-npm run pack:release
-dsh plugin --profile web add .\dsh-plugin-manager-0.7.0.tgz
-dsh web
+npm run build      # tsc --noEmit && tsdown → lib/
+npm pack           # 生成 dsh-plugin-manager-<版本>.tgz
 ~~~
+
+发版流程：
+
+1. 改版本号（`package.json` 与 `src/shared.ts` 的 `MANAGER_VERSION`），更新 CHANGELOG；
+2. `npm run build` 后**提交 lib/ 构建产物**（git 源安装依赖它，勿删 `.gitignore` 中已移除的 lib 排除）；
+3. 推送到 GitHub 并打 tag（`git tag v0.8.0 && git push origin v0.8.0`）——GitHub Actions 会自动跑测试并创建 Release（附带 tgz 安装包）。
 
 页面内的安装、升级、卸载直接以隐藏控制台运行 Profile 内置 pnpm（与 `dsh plugin` 命令等效，含相对路径锚定和 bundles 对账），Windows 上不会弹出 cmd 窗口，也不会受 PATH 上其他 pnpm 大版本影响。
 
