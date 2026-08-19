@@ -500,9 +500,9 @@ function OperationProgressCard({
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
-    .slice(-5);
+    .slice(-3);
   return (
-    <section className="dpm-operation dpm-progress-card" data-status="running" role="status" aria-live="polite">
+    <div className="dpm-toast dpm-progress-toast" role="status" aria-live="polite">
       <div className="dpm-progress-head">
         <span className="dpm-spinner" aria-hidden="true" />
         <div>
@@ -516,7 +516,7 @@ function OperationProgressCard({
       {logLines.length ? (
         <pre className="dpm-progress-log">{logLines.join("\n")}</pre>
       ) : null}
-    </section>
+    </div>
   );
 }
 
@@ -636,20 +636,22 @@ function RestartPromptCard({
   onLater: () => void;
 }) {
   return (
-    <section className="dpm-operation dpm-restart-prompt" data-status="success" role="status" aria-live="polite">
-      <strong>{actionVerb(action)}完成，需要重启 DSH 才能生效</strong>
-      <span>
-        新版本已写入 Profile，但正在运行的 DSH 仍在使用旧代码。重启后新版本才会加载，服务恢复后页面会自动刷新。
-      </span>
-      <div className="dpm-restart-prompt-actions">
-        <button className="dpm-button" onClick={onNow}>
-          立即重启
-        </button>
-        <button className="dpm-button" onClick={onLater}>
-          稍后重启
-        </button>
+    <div className="dpm-dialog-layer" role="alertdialog" aria-modal="true">
+      <div className="dpm-restart-prompt">
+        <strong>{actionVerb(action)}完成，需要重启 DSH 才能生效</strong>
+        <span>
+          新版本已写入 Profile，但正在运行的 DSH 仍在使用旧代码。重启后新版本才会加载，服务恢复后页面会自动刷新。
+        </span>
+        <div className="dpm-restart-prompt-actions">
+          <button className="dpm-button dpm-primary" onClick={onNow}>
+            立即重启
+          </button>
+          <button className="dpm-button" onClick={onLater}>
+            稍后重启
+          </button>
+        </div>
       </div>
-    </section>
+    </div>
   );
 }
 
