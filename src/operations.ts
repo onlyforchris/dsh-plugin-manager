@@ -4,6 +4,7 @@ import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import type {
+  OperationProgress,
   PluginAction,
   PluginOperationRequest,
   PluginOperationResult,
@@ -39,6 +40,44 @@ export type PluginCommandRunner = (
   action: PluginAction,
   target: string,
 ) => Promise<CommandResult>
+
+/** 操作实时输出追踪：页面通过 /operations/progress 轮询它渲染进度条。 */
+export class OperationProgressTracker {
+  private running = false
+  private action: PluginAction | null = null
+  private target: string | null = null
+  private output = ''
+  private finishedAt: string | null = null
+
+  start(action: PluginAction, target: string): void {
+    this.running = true
+    this.action = action
+    this.target = target
+    this.output = ''
+    this.finishedAt = null
+  }
+
+  append(chunk: string): void {
+    if (!this.running) return
+    this.output = appendOutput(this.output, chunk)
+  }
+
+  finish(): void {
+    if (!this.running) return
+    this.running = false
+    this.finishedAt = new Date().toISOString()
+  }
+
+  snapshot(): OperationProgress {
+    return {
+      running: this.running,
+      action: this.action,
+      target: this.target,
+      output: this.output,
+      finishedAt: this.finishedAt,
+    }
+  }
+}
 
 function appendOutput(current: string, chunk: Buffer | string): string {
   const combined = current + chunk.toString()
@@ -206,7 +245,11 @@ export async function reconcileBundles(
 
 function runPnpm(
   args: readonly string[],
-  input: { readonly profileRoot: string; readonly timeoutMs?: number },
+  input: {
+    readonly profileRoot: string
+    readonly timeoutMs?: number
+    readonly onOutput?: (chunk: string) => void
+  },
 ): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
     const bins = resolvePnpmBins(input.profileRoot)
@@ -233,8 +276,14 @@ function runPnpm(
     })
 
     let output = ''
-    child.stdout.on('data', chunk => { output = appendOutput(output, chunk) })
-    child.stderr.on('data', chunk => { output = appendOutput(output, chunk) })
+    child.stdout.on('data', chunk => {
+      output = appendOutput(output, chunk)
+      input.onOutput?.(chunk.toString())
+    })
+    child.stderr.on('data', chunk => {
+      output = appendOutput(output, chunk)
+      input.onOutput?.(chunk.toString())
+    })
     child.once('error', reject)
 
     const timeout = setTimeout(() => child.kill(), input.timeoutMs ?? 120_000)
@@ -271,11 +320,16 @@ export function createDshPluginRunner(input: {
   readonly profileRoot: string
   readonly cwd: string
   readonly timeoutMs?: number
+  readonly onOutput?: (chunk: string) => void
 }): PluginCommandRunner {
   return async (action, target) => {
     const beforeDeps = await readDependencyNames(input.profileRoot)
     const args = buildPnpmArgs(action, target, input.cwd)
-    const result = await runPnpm(args, input)
+    const result = await runPnpm(args, {
+      profileRoot: input.profileRoot,
+      ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+      ...(input.onOutput !== undefined ? { onOutput: input.onOutput } : {}),
+    })
     if (result.exitCode !== 0) {
       if (action === 'add' && GIT_SPEC.test(target)) {
         return {
@@ -338,16 +392,26 @@ function unchangedOutput(output: string): boolean {
 
 export class PluginOperationService {
   private running = false
+  private readonly progress: OperationProgressTracker
 
   constructor(
     private readonly runner: PluginCommandRunner,
     private readonly getInstalledNames: () => Promise<ReadonlySet<string>>,
     private readonly profileName: string,
-  ) {}
+    progress?: OperationProgressTracker,
+  ) {
+    this.progress = progress ?? new OperationProgressTracker()
+  }
+
+  /** 页面轮询用的实时输出快照。 */
+  progressSnapshot(): OperationProgress {
+    return this.progress.snapshot()
+  }
 
   async run(request: PluginOperationRequest): Promise<PluginOperationResult> {
     if (this.running) throw new PluginOperationError('已有插件操作正在执行', 'busy')
     this.running = true
+    this.progress.start(request.action, request.target)
     try {
       const installedNames = await this.getInstalledNames()
       validateRequest(request, installedNames)
@@ -366,6 +430,7 @@ export class PluginOperationService {
       }
     } finally {
       this.running = false
+      this.progress.finish()
     }
   }
 }

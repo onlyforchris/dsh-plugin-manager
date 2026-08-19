@@ -7,6 +7,7 @@ import {
   anchorPathSpec,
   buildPnpmArgs,
   isInstallSpec,
+  OperationProgressTracker,
   PluginOperationService,
   pnpmStoreHint,
   reconcileBundles,
@@ -190,5 +191,46 @@ describe('plugin operation service', () => {
 
     const manifest = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8'))
     expect(manifest.dsh.profile.bundles).toEqual(['in-box-base', 'a-bundle'])
+  })
+
+  it('tracks operation output for the progress endpoint', async () => {
+    const tracker = new OperationProgressTracker()
+    const idle = tracker.snapshot()
+    expect(idle.running).toBe(false)
+    expect(idle.output).toBe('')
+
+    tracker.start('update', 'demo-plugin')
+    expect(tracker.snapshot()).toMatchObject({
+      running: true,
+      action: 'update',
+      target: 'demo-plugin',
+    })
+    tracker.append('Progress: resolved 19, downloaded 2')
+    tracker.append('\nProgress: resolved 19, downloaded 2, added 1, done')
+    const running = tracker.snapshot()
+    expect(running.output).toContain('added 1, done')
+    expect(running.finishedAt).toBeNull()
+
+    tracker.finish()
+    const done = tracker.snapshot()
+    expect(done.running).toBe(false)
+    expect(done.finishedAt).not.toBeNull()
+    // finish 后不再追加
+    tracker.append('late output')
+    expect(tracker.snapshot().output).not.toContain('late output')
+  })
+
+  it('exposes a bounded progress snapshot from the service', async () => {
+    const tracker = new OperationProgressTracker()
+    const service = new PluginOperationService(
+      vi.fn(async () => ({ exitCode: 0, output: 'done' })),
+      async () => new Set(['demo-plugin']),
+      'web',
+      tracker,
+    )
+    const run = service.run({ action: 'update', target: 'demo-plugin' })
+    expect(service.progressSnapshot().running).toBe(true)
+    await run
+    expect(service.progressSnapshot().running).toBe(false)
   })
 })

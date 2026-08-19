@@ -8,17 +8,23 @@ import {
   createDiagnosticsHandler,
   createInventoryHandler,
   createOperationsHandler,
+  createOperationsProgressHandler,
   createRestartHandler,
   createUpdatesHandler,
 } from "./http.js";
 import { createPluginInventory, profileRoot } from "./inventory.js";
-import { createDshPluginRunner, PluginOperationService } from "./operations.js";
+import {
+  createDshPluginRunner,
+  OperationProgressTracker,
+  PluginOperationService,
+} from "./operations.js";
 import { createRestartHelper, DshRestartService } from "./restart.js";
 import {
   CATALOG_PATH,
   DIAGNOSTICS_PATH,
   INVENTORY_PATH,
   OPERATIONS_PATH,
+  OPERATIONS_PROGRESS_PATH,
   RESTART_PATH,
   UPDATES_PATH,
 } from "./shared.js";
@@ -74,13 +80,16 @@ export function apply(ctx: DshHostContext, config: Config = {}): void {
     }),
   );
   const dshCliPath = process.argv[1] ?? "";
+  const progress = new OperationProgressTracker();
   const service = new PluginOperationService(
     createDshPluginRunner({
       profileRoot: root,
       cwd: process.cwd(),
+      onOutput: (chunk) => progress.append(chunk),
     }),
     async () => new Set((await inventory()).plugins.map((p) => p.name)),
     profileName,
+    progress,
   );
   const appArgs = ctx.get("cmdlineArgs")?.get();
   const restart = new DshRestartService(
@@ -101,6 +110,11 @@ export function apply(ctx: DshHostContext, config: Config = {}): void {
     [UPDATES_PATH, createUpdatesHandler(updates), "updates"],
     [CATALOG_PATH, createCatalogHandler(catalog), "catalog"],
     [OPERATIONS_PATH, createOperationsHandler(service), "operations"],
+    [
+      OPERATIONS_PROGRESS_PATH,
+      createOperationsProgressHandler(service),
+      "operations-progress",
+    ],
     [RESTART_PATH, createRestartHandler(restart), "restart"],
   ] as const)
     ctx.effect(

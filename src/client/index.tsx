@@ -12,10 +12,12 @@ import {
   DIAGNOSTICS_PATH,
   INVENTORY_PATH,
   OPERATIONS_PATH,
+  OPERATIONS_PROGRESS_PATH,
   RESTART_PATH,
   UPDATES_PATH,
   type DiagnosticReport,
   type ManagedPlugin,
+  type OperationProgress,
   type PluginAction,
   type PluginCatalog,
   type PluginCatalogEntry,
@@ -25,6 +27,33 @@ import {
   type PluginUpdatesReport,
 } from "../shared.js";
 import { CLIENT_STYLES } from "./styles.js";
+
+/** 稍后重启的持久化提醒（localStorage key）。 */
+const PENDING_RESTART_KEY = "dpm-pending-restart";
+interface PendingRestart {
+  readonly action: PluginAction;
+  readonly target: string;
+  readonly displayName: string;
+  readonly at: string;
+}
+function readPendingRestart(): PendingRestart | null {
+  try {
+    const raw = window.localStorage.getItem(PENDING_RESTART_KEY);
+    if (!raw) return null;
+    const value = JSON.parse(raw) as PendingRestart;
+    return value && typeof value.target === "string" ? value : null;
+  } catch {
+    return null;
+  }
+}
+function writePendingRestart(value: PendingRestart | null) {
+  try {
+    if (value === null) window.localStorage.removeItem(PENDING_RESTART_KEY);
+    else window.localStorage.setItem(PENDING_RESTART_KEY, JSON.stringify(value));
+  } catch {
+    // 隐私模式下 localStorage 不可用：只做内存提醒
+  }
+}
 
 interface Slots {
   inject(n: string, p: () => unknown): unknown;
@@ -440,6 +469,86 @@ function RestartOverlay({ action }: { action: PluginAction }) {
   );
 }
 
+/** 从 pnpm 实时输出推导当前阶段，驱动进度条与阶段文案。 */
+function progressPhase(output: string): { label: string; detail: string } {
+  if (!output) return { label: "准备中…", detail: "" };
+  const lines = output.split("\n").filter((line) => line.trim().length > 0);
+  const last = lines[lines.length - 1] ?? "";
+  if (/Done in \d/.test(last))
+    return { label: "完成", detail: last.trim() };
+  if (/Progress: resolved \d+/.test(last)) {
+    const downloaded = /downloaded (\d+)/.exec(last)?.[1];
+    const added = /added (\d+)/.exec(last)?.[1];
+    if (added && added !== "0") return { label: "安装中…", detail: last.trim() };
+    if (downloaded && downloaded !== "0")
+      return { label: "下载中…", detail: last.trim() };
+    return { label: "解析依赖…", detail: last.trim() };
+  }
+  if (/Packages: \+/.test(output)) return { label: "应用变更…", detail: last.trim() };
+  return { label: "执行中…", detail: last.trim() };
+}
+
+function OperationProgressCard({
+  label,
+  progress,
+}: {
+  label: string;
+  progress: OperationProgress | null;
+}) {
+  const phase = progressPhase(progress?.output ?? "");
+  const logLines = (progress?.output ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .slice(-5);
+  return (
+    <section className="dpm-operation dpm-progress-card" data-status="running" role="status" aria-live="polite">
+      <div className="dpm-progress-head">
+        <span className="dpm-spinner" aria-hidden="true" />
+        <div>
+          <strong>{label}…</strong>
+          <span className="dpm-progress-phase">{phase.label}</span>
+        </div>
+      </div>
+      <div className="dpm-progress-track" role="progressbar" aria-label={label}>
+        <span className="dpm-progress-bar" />
+      </div>
+      {logLines.length ? (
+        <pre className="dpm-progress-log">{logLines.join("\n")}</pre>
+      ) : null}
+    </section>
+  );
+}
+
+function RestartPromptCard({
+  action,
+  displayName,
+  onNow,
+  onLater,
+}: {
+  action: PluginAction;
+  displayName: string;
+  onNow: () => void;
+  onLater: () => void;
+}) {
+  return (
+    <section className="dpm-operation dpm-restart-prompt" data-status="success" role="status" aria-live="polite">
+      <strong>{actionVerb(action)}完成，需要重启 DSH 才能生效</strong>
+      <span>
+        新版本已写入 Profile，但正在运行的 DSH 仍在使用旧代码。重启后新版本才会加载，服务恢复后页面会自动刷新。
+      </span>
+      <div className="dpm-restart-prompt-actions">
+        <button className="dpm-button" onClick={onNow}>
+          立即重启
+        </button>
+        <button className="dpm-button" onClick={onLater}>
+          稍后重启
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function Installed({
   plugin,
   update,
@@ -629,9 +738,45 @@ export function PluginManagerTab(): ReactNode {
   const [page, setPage] = useState<Page>({ status: "loading" });
   const [target, setTarget] = useState("");
   const [op, setOp] = useState<Op>({ status: "idle" });
+  const [progress, setProgress] = useState<OperationProgress | null>(null);
   const [guide, setGuide] = useState<GuideNotice>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [restart, setRestart] = useState<RestartState>({ status: "idle" });
+  const [restartPrompt, setRestartPrompt] = useState<Confirmation | null>(
+    null,
+  );
+  const [pendingRestart, setPendingRestart] = useState<PendingRestart | null>(
+    null,
+  );
+
+  useEffect(() => {
+    setPendingRestart(readPendingRestart());
+  }, []);
+
+  // 操作进行中：轮询服务端实时输出，驱动进度条与日志
+  useEffect(() => {
+    if (op.status !== "running") return;
+    let cancelled = false;
+    let timer = 0;
+    const poll = async () => {
+      try {
+        const response = await fetch(OPERATIONS_PROGRESS_PATH, {
+          cache: "no-store",
+          credentials: "same-origin",
+        });
+        if (response.ok) setProgress((await response.json()) as OperationProgress);
+      } catch {
+        // 服务暂不可达：保持上一次快照，下次轮询重试
+      }
+      if (!cancelled) timer = window.setTimeout(poll, 500);
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      setProgress(null);
+    };
+  }, [op.status, op.status === "running" ? op.target : ""]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -707,19 +852,12 @@ export function PluginManagerTab(): ReactNode {
           refresh();
           return;
         }
-        setRestart({ status: "restarting", action: request.action });
-        try {
-          await restartDsh();
-          await waitForRestart();
-        } catch (error) {
-          setRestart({
-            status: "failed",
-            action: request.action,
-            message:
-              error instanceof Error ? error.message : "DSH 自动重启失败",
-          });
-          refresh();
-        }
+        // 操作已生效但需要重启：先明确告知用户，由用户决定立即或稍后重启
+        setRestartPrompt({
+          action: request.action,
+          target: request.target,
+          displayName: request.displayName,
+        });
       } catch (error) {
         setOp({
           status: "error",
@@ -731,6 +869,53 @@ export function PluginManagerTab(): ReactNode {
     },
     [refresh],
   );
+
+  const runRestart = useCallback(
+    async (action: PluginAction, target: string) => {
+      setRestart({ status: "restarting", action });
+      try {
+        await restartDsh();
+        await waitForRestart();
+      } catch (error) {
+        setRestart({
+          status: "failed",
+          action,
+          message:
+            error instanceof Error ? error.message : "DSH 自动重启失败",
+        });
+        refresh();
+      }
+    },
+    [refresh],
+  );
+
+  const confirmRestart = useCallback(
+    async (prompt: Confirmation) => {
+      setRestartPrompt(null);
+      setPendingRestart(null);
+      writePendingRestart(null);
+      await runRestart(prompt.action, prompt.target);
+    },
+    [runRestart],
+  );
+
+  const deferRestart = useCallback((prompt: Confirmation) => {
+    const pending: PendingRestart = {
+      action: prompt.action,
+      target: prompt.target,
+      displayName: prompt.displayName,
+      at: new Date().toISOString(),
+    };
+    writePendingRestart(pending);
+    setPendingRestart(pending);
+    setRestartPrompt(null);
+    refresh();
+  }, [refresh]);
+
+  const dismissPendingRestart = useCallback(() => {
+    writePendingRestart(null);
+    setPendingRestart(null);
+  }, []);
 
   const launch = useCallback(async (entry: PluginCatalogEntry) => {
     const action = entry.launch;
@@ -786,21 +971,9 @@ export function PluginManagerTab(): ReactNode {
 
   const retryRestart = useCallback(
     async (action: PluginAction) => {
-      setRestart({ status: "restarting", action });
-      try {
-        await restartDsh();
-        await waitForRestart();
-      } catch (error) {
-        setRestart({
-          status: "failed",
-          action,
-          message:
-            error instanceof Error ? error.message : "DSH 自动重启失败",
-        });
-        refresh();
-      }
+      await runRestart(action, "");
     },
-    [refresh],
+    [runRestart],
   );
 
   const installed =
@@ -871,6 +1044,36 @@ export function PluginManagerTab(): ReactNode {
           ) : null}
         </section>
       ) : null}
+      {pendingRestart ? (
+        <section className="dpm-notice" data-status="warning" role="status" aria-live="polite">
+          <span>
+            {pendingRestart.displayName} 已{actionVerb(pendingRestart.action)}，重启 DSH 后才会生效。
+          </span>
+          <button
+            className="dpm-button"
+            onClick={() =>
+              void confirmRestart({
+                action: pendingRestart.action,
+                target: pendingRestart.target,
+                displayName: pendingRestart.displayName,
+              })
+            }
+          >
+            立即重启
+          </button>
+          <button className="dpm-button" onClick={dismissPendingRestart}>
+            知道了
+          </button>
+        </section>
+      ) : null}
+      {restartPrompt ? (
+        <RestartPromptCard
+          action={restartPrompt.action}
+          displayName={restartPrompt.displayName}
+          onNow={() => void confirmRestart(restartPrompt)}
+          onLater={() => deferRestart(restartPrompt)}
+        />
+      ) : null}
       {restart.status === "failed" ? (
         <section className="dpm-operation" data-status="error" role="alert">
           <strong>插件已更新，但自动重启没有完成</strong>
@@ -889,14 +1092,7 @@ export function PluginManagerTab(): ReactNode {
         </section>
       ) : null}
       {op.status === "running" ? (
-        <section
-          className="dpm-operation"
-          data-status="running"
-          role="status"
-          aria-live="polite"
-        >
-          正在{op.label}
-        </section>
+        <OperationProgressCard label={op.label} progress={progress} />
       ) : null}
       {op.status === "error" ? (
         <section className="dpm-operation" data-status="error" role="alert">

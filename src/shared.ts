@@ -1,11 +1,21 @@
 export const PACKAGE_NAME = "dsh-plugin-manager";
-export const MANAGER_VERSION = "0.7.0";
+export const MANAGER_VERSION = "0.8.0";
 export const DIAGNOSTICS_PATH = "/dsh-plugin-manager/api/diagnostics";
 export const INVENTORY_PATH = "/dsh-plugin-manager/api/plugins";
 export const OPERATIONS_PATH = "/dsh-plugin-manager/api/operations";
+export const OPERATIONS_PROGRESS_PATH =
+  "/dsh-plugin-manager/api/operations/progress";
 export const RESTART_PATH = "/dsh-plugin-manager/api/restart";
 export const UPDATES_PATH = "/dsh-plugin-manager/api/updates";
 export const CATALOG_PATH = "/dsh-plugin-manager/api/catalog";
+/** 操作进行中的实时输出快照（供页面轮询渲染进度）。 */
+export interface OperationProgress {
+  readonly running: boolean;
+  readonly action: PluginAction | null;
+  readonly target: string | null;
+  readonly output: string;
+  readonly finishedAt: string | null;
+}
 export type DiagnosticStatus = "pass" | "warning" | "fail";
 export interface DiagnosticCheck {
   readonly id: string;

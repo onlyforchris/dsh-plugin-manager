@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.0
+
+- 插件操作（安装/升级/卸载）增加**实时进度面板**：pnpm 输出通过 `/operations/progress` 轮询接口流式展示，页面显示阶段（解析依赖 → 下载 → 安装 → 完成）、不确定进度条与最近日志，不再干等。
+- 操作完成且需要重启时，改为**明确提示**「升级完成，需要重启 DSH 才能生效」+「立即重启 / 稍后重启」；选择稍后会在插件页保留提醒横幅（localStorage 持久化），不再无提示地直接重启。
+- 服务端新增 `OperationProgressTracker` 与 progress 路由（有测试覆盖）。
+
 ## 0.7.0
 
 - 首批 5 个实机验证通过的插件正式上架推荐目录（registry/plugins.json）：3 个 `verified`（vision-toolkit、dsh-at-file、dsh-find-plugin）、2 个 `experimental`（dsh-genui、dsh-web-ui-all），全部带首次使用步骤、权限说明与快捷入口；验证记录见 registry/reviews。

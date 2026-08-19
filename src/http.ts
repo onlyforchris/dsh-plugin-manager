@@ -104,6 +104,18 @@ export function createCatalogHandler(
     }
   }
 }
+export function createOperationsProgressHandler(
+  service: PluginOperationService,
+): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+  return async (req, res) => {
+    if (req.method !== 'GET') {
+      sendJson(res, 405, { error: 'method_not_allowed' }, { allow: 'GET' })
+      return
+    }
+    sendJson(res, 200, service.progressSnapshot())
+  }
+}
+
 export function createRestartHandler(
   service: DshRestartService,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
