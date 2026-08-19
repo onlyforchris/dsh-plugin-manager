@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   anchorPathSpec,
+  buildPnpmArgs,
   isInstallSpec,
   PluginOperationService,
   pnpmStoreHint,
@@ -48,6 +49,48 @@ describe('plugin operation service', () => {
       command: 'dsh plugin --profile web update demo-plugin',
       restartRequired: true,
     })
+  })
+
+  it('builds pnpm args with --latest for updates', () => {
+    // 精确版本声明的插件在裸 pnpm update 下不会升级，必须带 --latest
+    expect(buildPnpmArgs('update', 'demo-plugin', 'C:\\workspace'))
+      .toEqual(['update', '--latest', 'demo-plugin'])
+    expect(buildPnpmArgs('add', './a.tgz', 'C:\\workspace'))
+      .toEqual(['add', 'C:\\workspace\\a.tgz'])
+    expect(buildPnpmArgs('remove', 'demo-plugin', 'C:\\workspace'))
+      .toEqual(['remove', 'demo-plugin'])
+  })
+
+  it('does not request a restart when pnpm reports no actual change', async () => {
+    const runner = vi.fn(async () => ({
+      exitCode: 0,
+      output: 'Already up to date\nDone in 1.2s',
+    }))
+    const service = new PluginOperationService(
+      runner,
+      async () => new Set(['demo-plugin']),
+      'web',
+    )
+
+    const result = await service.run({ action: 'update', target: 'demo-plugin' })
+    expect(result.success).toBe(true)
+    expect(result.restartRequired).toBe(false)
+  })
+
+  it('requests a restart only when pnpm applied changes', async () => {
+    const runner = vi.fn(async () => ({
+      exitCode: 0,
+      output: 'Packages: +1\nProgress: resolved 19, downloaded 1, added 1, done',
+    }))
+    const service = new PluginOperationService(
+      runner,
+      async () => new Set(['demo-plugin']),
+      'web',
+    )
+
+    const result = await service.run({ action: 'update', target: 'demo-plugin' })
+    expect(result.success).toBe(true)
+    expect(result.restartRequired).toBe(true)
   })
 
   it('protects the running manager and rejects missing dependencies', async () => {

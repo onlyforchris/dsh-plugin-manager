@@ -250,6 +250,23 @@ function runPnpm(
   })
 }
 
+/**
+ * 组装实际传给 pnpm 的参数。update 必须带 --latest：Profile 中插件常以
+ * 精确版本（如 "0.1.31"）或 Git 源声明，裸 `pnpm update <name>` 只会在
+ * 既有 semver 范围内更新，精确版本会被判定为 "Already up to date" 而不升级。
+ */
+export function buildPnpmArgs(
+  action: PluginAction,
+  target: string,
+  cwd: string,
+): string[] {
+  return action === 'add'
+    ? ['add', anchorPathSpec(target, cwd)]
+    : action === 'update'
+      ? ['update', '--latest', target]
+      : [action, target]
+}
+
 export function createDshPluginRunner(input: {
   readonly profileRoot: string
   readonly cwd: string
@@ -257,9 +274,7 @@ export function createDshPluginRunner(input: {
 }): PluginCommandRunner {
   return async (action, target) => {
     const beforeDeps = await readDependencyNames(input.profileRoot)
-    const args = action === 'add'
-      ? ['add', anchorPathSpec(target, input.cwd)]
-      : [action, target]
+    const args = buildPnpmArgs(action, target, input.cwd)
     const result = await runPnpm(args, input)
     if (result.exitCode !== 0) {
       if (action === 'add' && GIT_SPEC.test(target)) {
@@ -312,6 +327,15 @@ function validateRequest(request: PluginOperationRequest, installedNames: Readon
   }
 }
 
+/**
+ * pnpm 无实际变更时的输出特征：只出现 "Already up to date"，没有
+ * "Packages: +N" 变更行。此类结果不应视为需要重启的成功变更——
+ * 否则点一次"升级"（实际没升）也会触发一次 DSH 重启。
+ */
+function unchangedOutput(output: string): boolean {
+  return /already up to date/i.test(output) && !/Packages:\s*\+/i.test(output)
+}
+
 export class PluginOperationService {
   private running = false
 
@@ -336,7 +360,8 @@ export class PluginOperationService {
         exitCode: result.exitCode,
         command: `dsh plugin --profile ${this.profileName} ${request.action} ${request.target}`,
         output: result.output,
-        restartRequired: result.exitCode === 0,
+        restartRequired:
+          result.exitCode === 0 && !unchangedOutput(result.output),
         finishedAt: new Date().toISOString(),
       }
     } finally {
