@@ -3,7 +3,7 @@
 **DSH 插件管家**：验证过的插件推荐 + 页内安装/升级/卸载与结构体检。
 **Native DSH plugin discovery, first-use & lifecycle manager**: verified recommendations, in-page install / update / remove and structural health checks.
 
-DSH 的插件发现与生命周期管理入口。0.6.1 将“推荐插件”放到首屏，在同一页面完成发现、安装、升级、卸载和结构体检。
+DSH 的插件发现与生命周期管理入口：推荐插件、页内安装/升级/卸载、结构体检，以及操作进度与重启确认。自 0.8.0 起，插件操作显示实时进度（阶段与日志），完成后明确提示「需要重启 DSH 才能生效」，支持立即重启或稍后重启（横幅持续提醒）。
 
 ## 使用
 
@@ -18,9 +18,15 @@ DSH 的插件发现与生命周期管理入口。0.6.1 将“推荐插件”放�
 
 ## 第一次成功使用
 
-推荐卡不仅告诉用户“装什么”，还要解释“为什么推荐”和“第一次怎么用”。安装会依次显示：未安装、安装中、自动重启、已启用或安装失败。安装成功后，管家会安全退出并按原启动参数拉起 DSH，页面等待服务恢复后自动刷新；只有自动重启不可用时才显示命令行兜底。回到推荐卡后，可直接打开真实存在的设置入口，或复制一段可立即试用的示例提示。
+推荐卡不仅告诉用户“装什么”，还要解释“为什么推荐”和“第一次怎么用”。安装/升级会显示实时进度（阶段：解析依赖 → 下载 → 安装 → 完成，附最近日志）。完成后如果新版本需要重启才能生效，页面会明确提示「操作完成，需要重启 DSH 才能生效」，并提供两个选择：
+
+- **立即重启**：管家安全退出并按原启动参数拉起 DSH，页面等待服务恢复后自动刷新；
+- **稍后重启**：插件页顶部保留黄色横幅提醒（刷新后仍在），直到重启完成。
+
+只有自动重启不可用时才显示命令行兜底。回到推荐卡后，可直接打开真实存在的设置入口，或复制一段可立即试用的示例提示。
 
 远程目录中的 `firstUse` 负责提供 1–5 个首次使用步骤；`launch` 仅允许打开已注册的设置入口或复制示例提示，不允许目录下发任意 URL、脚本或 Shell 命令。
+
 ## 推荐策略
 
 推荐不是 npm 搜索结果。条目必须说明维护者、源码、许可证、DSH 兼容范围、验证日期、权限和推荐理由。
@@ -49,7 +55,7 @@ DSH 的插件发现与生命周期管理入口。0.6.1 将“推荐插件”放�
 
 首批候选（2026-08-18 验证）已完成实机验证并收录，见 [registry/plugins.json](./registry/plugins.json)：3 个 `verified`（vision-toolkit、dsh-at-file、dsh-find-plugin）、2 个 `experimental`（dsh-genui、dsh-web-ui-all）。验证记录见 [registry/reviews](./registry/reviews)。目录仍不接受未经验证的条目，也不会用普通 npm 包凑数。
 
-> 复验待办：首批验证于 DSH 0.1.0-rc.6 完成；rc.7 发布后需按 [registry/README.md](./registry/README.md) 的 SOP 复跑，通过后更新 `verifiedWithDsh`。
+> 复验待办：首批验证于 DSH 0.1.0-rc.6 完成；需在 rc.7 上按 [registry/README.md](./registry/README.md) 的 SOP 复跑后更新 `verifiedWithDsh`。
 
 ## 安装（给使用者）
 
@@ -81,7 +87,7 @@ npm pack           # 生成 dsh-plugin-manager-<版本>.tgz
 发版流程：
 
 1. 改版本号（`package.json` 与 `src/shared.ts` 的 `MANAGER_VERSION`），更新 CHANGELOG；
-2. `npm run build` 后**提交 lib/ 构建产物**（git 源安装依赖它，勿删 `.gitignore` 中已移除的 lib 排除）；
+2. `npm run build` 后**提交 lib/ 构建产物**（`lib/` 已入库，git 源安装直接使用它，发版时记得提交最新构建）；
 3. 推送到 GitHub 并打 tag（`git tag v0.8.0 && git push origin v0.8.0`）——GitHub Actions 会自动跑测试并创建 Release（附带 tgz 安装包）。
 
 页面内的安装、升级、卸载直接以隐藏控制台运行 Profile 内置 pnpm（与 `dsh plugin` 命令等效，含相对路径锚定和 bundles 对账），Windows 上不会弹出 cmd 窗口，也不会受 PATH 上其他 pnpm 大版本影响。
