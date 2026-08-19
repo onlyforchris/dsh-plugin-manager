@@ -1,5 +1,8 @@
 # DSH Plugin Manager
 
+**DSH 插件管家**：验证过的插件推荐 + 页内安装/升级/卸载与结构体检。
+**Native DSH plugin discovery, first-use & lifecycle manager**: verified recommendations, in-page install / update / remove and structural health checks.
+
 DSH 的插件发现与生命周期管理入口。0.6.1 将“推荐插件”放到首屏，在同一页面完成发现、安装、升级、卸载和结构体检。
 
 ## 使用
