@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi } from "vitest";
-import { apply, PluginManagerTab } from "../src/client/index.js";
+import { apply, installManagerNavIcon, PluginManagerTab } from "../src/client/index.js";
 
 describe("client plugin registration", () => {
   it("registers the plugin manager as a first-level settings section", () => {
@@ -48,5 +48,28 @@ describe("client plugin registration", () => {
     expect(
       document.head.querySelector('style[data-plugin="dsh-plugin-manager"]'),
     ).toBeNull();
+  });
+
+  it("replaces the gear glyph of the manager nav item with the brand icon", () => {
+    document.body.innerHTML = `
+      <nav>
+        <button><svg data-testid="gear"></svg><span>通用设置</span></button>
+        <button><svg data-testid="gear"></svg><span>插件管家</span></button>
+      </nav>`;
+    installManagerNavIcon(document);
+    const managerButton = [...document.querySelectorAll("nav button")].find(
+      (b) => b.querySelector("span")?.textContent?.trim() === "插件管家",
+    );
+    // 齿轮已被品牌盾牌图标替换，且只替换一次
+    expect(managerButton?.querySelector("svg")?.getAttribute("data-testid")).toBeNull();
+    expect(managerButton?.querySelectorAll("svg").length).toBe(1);
+    expect(managerButton?.querySelector("svg")?.querySelector("path")).not.toBeNull();
+    installManagerNavIcon(document);
+    expect(managerButton?.querySelectorAll("svg").length).toBe(1);
+    // 其他 section 的图标不受影响
+    const generalButton = [...document.querySelectorAll("nav button")].find(
+      (b) => b.querySelector("span")?.textContent?.trim() === "通用设置",
+    );
+    expect(generalButton?.querySelector("svg")?.getAttribute("data-testid")).toBe("gear");
   });
 });

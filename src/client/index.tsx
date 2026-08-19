@@ -520,6 +520,44 @@ function OperationProgressCard({
   );
 }
 
+/** 插件管家品牌图标：盾牌（守护插件）+ 对勾（验证管理）。单色线性，与 DSH 图标风格一致。 */
+function ManagerIcon({ size }: { size: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M8 1.2 13.8 3.3v4.1c0 3.5-2.3 6.1-5.8 7.2-3.5-1.1-5.8-3.7-5.8-7.2V3.3L8 1.2Z" />
+      <path d="M5.6 8.1 7.2 9.7l3.1-3.5" />
+    </svg>
+  );
+}
+
+/**
+ * 把设置左侧导航里「插件管家」项的齿轮图标替换为品牌图标。
+ * DSH shell 按 section id 硬编码导航图标，未知 id 一律回退齿轮
+ * （第三方 section 均如此），此处以运行时修补对齐品牌设定。
+ */
+export function installManagerNavIcon(doc: Document) {
+  const button = [...doc.querySelectorAll<HTMLButtonElement>("nav button")].find(
+    (item) =>
+      item.querySelector("span")?.textContent?.trim() === "插件管家" &&
+      item.dataset.dpmIcon !== "manager",
+  );
+  const svg = button?.querySelector("svg");
+  if (!button || !svg) return;
+  svg.outerHTML =
+    '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.2 13.8 3.3v4.1c0 3.5-2.3 6.1-5.8 7.2-3.5-1.1-5.8-3.7-5.8-7.2V3.3L8 1.2Z"/><path d="M5.6 8.1 7.2 9.7l3.1-3.5"/></svg>';
+  button.dataset.dpmIcon = "manager";
+}
+
 /** 顶部概览卡：一眼看清管家的价值（验证/实验性/可升级/结构健康）。 */
 function ManagerHero({
   verified,
@@ -550,7 +588,7 @@ function ManagerHero({
     <section className="dpm-hero">
       <div className="dpm-hero-brand">
         <span className="dpm-hero-icon" aria-hidden="true">
-          🧩
+          <ManagerIcon size={24} />
         </span>
         <div>
           <strong>插件管家</strong>
@@ -1375,6 +1413,16 @@ export function apply(ctx: Context): void {
     document.head.append(style);
     return () => style.remove();
   }, "dsh-plugin-manager: styles");
+  // 设置导航由 shell 按 section id 硬编码图标（未知 id → 齿轮），
+  // 运行时把「插件管家」项替换为品牌图标。
+  ctx.effect(() => {
+    const observer = new MutationObserver(() =>
+      installManagerNavIcon(document),
+    );
+    observer.observe(document.body, { childList: true, subtree: true });
+    installManagerNavIcon(document);
+    return () => observer.disconnect();
+  }, "dsh-plugin-manager: nav icon");
   ctx.slots.inject("settings.section", () =>
     ctx.slots.register(
       {
